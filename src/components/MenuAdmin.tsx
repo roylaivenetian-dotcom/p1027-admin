@@ -82,45 +82,71 @@ export function MenuAdmin({
     setOcrDishes([])
   }, [])
 
-  const ingestImageFile = useCallback(async (file: File) => {
-    setEditingId(null)
-    setError(null)
-    setStep('idle')
-    setOcrDishes([])
+  const lastFileRef = useRef<File | null>(null)
+
+  const runVisionOnDataUrl = useCallback(async (dataUrl: string, bytesHint?: number) => {
     setBusy(true)
-    setStatus('Compressing…')
+    setError(null)
+    setOcrDishes([])
+    setStep('idle')
+    setPreview(dataUrl)
+    setStatus(
+      bytesHint
+        ? `Gemini vision… (${Math.round(bytesHint / 1024)} KB)`
+        : 'Gemini vision…',
+    )
     try {
-      const { dataUrl, bytes } = await compressMenuImage(file)
-      setPreview(dataUrl)
-      setStatus(`Reading menu… (${Math.round(bytes / 1024)} KB)`)
       const { dishes, engine } = await ocrMenuImage(dataUrl, (msg) => setStatus(msg))
       setOcrDishes(
         dishes.length
           ? dishes
-          : [
-              {
-                key: `blank-${Date.now()}`,
-                nameZh: '',
-                nameEn: '',
-                category: 'meal',
-              },
-            ],
+          : [{ key: `blank-${Date.now()}`, nameZh: '', nameEn: '', category: 'meal' }],
       )
       setStep('confirm')
       setStatus(
         dishes.length
           ? `Review ${dishes.length} dish${dishes.length === 1 ? '' : 'es'} (${engine}) — confirm before save`
-          : 'No dishes detected — add rows manually, then confirm',
+          : 'Gemini returned no dishes — add rows manually, then confirm',
       )
     } catch (err) {
-      setPreview(null)
+      // Keep preview so user can retry; never dump Tesseract garbage into the list
       setStep('idle')
+      setOcrDishes([])
       setError(err instanceof Error ? err.message : String(err))
-      setStatus(null)
+      setStatus('Gemini vision failed — fix network/API or tap Retry. Tesseract fallback is disabled.')
     } finally {
       setBusy(false)
     }
   }, [])
+
+  const ingestImageFile = useCallback(
+    async (file: File) => {
+      setEditingId(null)
+      lastFileRef.current = file
+      setBusy(true)
+      setStatus('Compressing…')
+      setError(null)
+      try {
+        const { dataUrl, bytes } = await compressMenuImage(file)
+        await runVisionOnDataUrl(dataUrl, bytes)
+      } catch (err) {
+        setPreview(null)
+        setStep('idle')
+        setError(err instanceof Error ? err.message : String(err))
+        setStatus(null)
+        setBusy(false)
+      }
+    },
+    [runVisionOnDataUrl],
+  )
+
+  const retryVision = useCallback(() => {
+    if (lastFileRef.current) {
+      void ingestImageFile(lastFileRef.current)
+      return
+    }
+    if (preview) void runVisionOnDataUrl(preview)
+  }, [ingestImageFile, preview, runVisionOnDataUrl])
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -374,7 +400,19 @@ export function MenuAdmin({
                   <input type="file" accept="image/*" onChange={(e) => void onFile(e)} disabled={busy} />
                 </label>
                 {status && <p className="menu-status">{status}</p>}
-                {error && <p className="menu-error">{error}</p>}
+                {error && (
+                  <div className="menu-vision-error">
+                    <p className="menu-error">{error}</p>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => retryVision()}
+                      disabled={busy || (!lastFileRef.current && !preview)}
+                    >
+                      Retry Gemini vision
+                    </button>
+                  </div>
+                )}
               </>
             ) : (
               <>

@@ -10,12 +10,17 @@ const DEFAULT_MODELS = [
   'gemini-3.5-flash-lite',
 ]
 
-function getApiKey(): string | null {
+function getApiKeys(): string[] {
+  const keys: string[] = []
   const dedicated = import.meta.env.VITE_GEMINI_API_KEY as string | undefined
-  if (dedicated && !dedicated.includes('YOUR_') && dedicated.length > 20) return dedicated
+  if (dedicated && !dedicated.includes('YOUR_') && dedicated.length > 20) keys.push(dedicated)
   const fb = import.meta.env.VITE_FIREBASE_API_KEY as string | undefined
-  if (fb && !fb.includes('YOUR_') && fb.length > 20) return fb
-  return null
+  if (fb && !fb.includes('YOUR_') && fb.length > 20 && !keys.includes(fb)) keys.push(fb)
+  return keys
+}
+
+function getApiKey(): string | null {
+  return getApiKeys()[0] ?? null
 }
 
 function getModels(): string[] {
@@ -46,7 +51,6 @@ const PROMPT = `你是香港繁體中文菜單逐字抄寫員（不是簡體翻�
 7. 同名菜（如每日「燒味飯」「經典豉油西餐飯…」）只列一次。
 8. category 只能是 meal / soup / drink（飯麵粉類=meal）。`
 
-/** Safety-net corrections for frequent HK lunch-menu OCR mixups (only exact/substring safe swaps). */
 const TRAD_FIXES: [RegExp, string][] = [
   [/九菜花/g, '韭菜花'],
   [/九菜/g, '韭菜'],
@@ -54,7 +58,6 @@ const TRAD_FIXES: [RegExp, string][] = [
   [/羅白/g, '蘿蔔'],
   [/羅蔔/g, '蘿蔔'],
   [/椒汁香芋/g, '椰汁香芋'],
-  [/鯪魚球/g, '鯪魚球'],
 ]
 
 function applyTradFixes(name: string): string {
@@ -129,20 +132,19 @@ async function dataUrlToBase64(dataUrl: string): Promise<{ mime: string; data: s
   return { mime: blob.type || 'image/jpeg', data: btoa(binary) }
 }
 
-/**
- * Upscale small phone/screenshot crops and mild-sharpen so Traditional strokes stay readable.
- * Prefer sending a larger, sharper JPEG to vision (not the Firestore-compressed copy alone).
- */
-export async function prepareVisionImage(dataUrl: string): Promise<string> {
+/** Prepare a JPEG for Gemini: enough pixels for 繁體 strokes, but capped for request size. */
+export async function prepareVisionImage(dataUrl: string, targetW = 1600): Promise<string> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const el = new Image()
     el.onload = () => resolve(el)
     el.onerror = () => reject(new Error('Vision image load failed'))
     el.src = dataUrl
   })
-  const targetW = 2000
-  const scale = Math.max(1, targetW / img.width) // upscale when small; keep native if already large
-  const w = Math.min(2200, Math.round(img.width * Math.min(scale, 2200 / img.width)))
+  // Upscale only if small (<1200); otherwise downscale/keep near targetW
+  let w: number
+  if (img.width < 1200) w = Math.min(targetW, Math.round(img.width * (targetW / Math.max(img.width, 1))))
+  else w = Math.min(targetW, img.width)
+  w = Math.max(800, w)
   const h = Math.round((img.height / img.width) * w)
   const canvas = document.createElement('canvas')
   canvas.width = w
@@ -153,20 +155,19 @@ export async function prepareVisionImage(dataUrl: string): Promise<string> {
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(img, 0, 0, w, h)
 
-  // Mild unsharp via canvas (helps 炆/豉/韭 strokes)
   try {
     const blur = document.createElement('canvas')
     blur.width = w
     blur.height = h
     const bctx = blur.getContext('2d')
     if (bctx) {
-      bctx.filter = 'blur(0.6px)'
+      bctx.filter = 'blur(0.5px)'
       bctx.drawImage(canvas, 0, 0)
       const sharp = ctx.getImageData(0, 0, w, h)
       const soft = bctx.getImageData(0, 0, w, h)
       const s = sharp.data
       const u = soft.data
-      const amount = 1.25
+      const amount = 1.15
       for (let i = 0; i < s.length; i += 4) {
         for (let c = 0; c < 3; c++) {
           const v = s[i + c]! + amount * (s[i + c]! - u[i + c]!)
@@ -176,89 +177,128 @@ export async function prepareVisionImage(dataUrl: string): Promise<string> {
       ctx.putImageData(sharp, 0, 0)
     }
   } catch {
-    /* sharpen optional */
+    /* optional */
   }
 
-  return canvas.toDataURL('image/jpeg', 0.95)
+  return canvas.toDataURL('image/jpeg', 0.9)
 }
 
 export function visionConfigured(): boolean {
   return Boolean(getApiKey())
 }
 
+async function callGemini(
+  apiKey: string,
+  model: string,
+  mime: string,
+  data: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data } }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0,
+          responseMimeType: 'application/json',
+        },
+      }),
+    },
+  )
+  const raw = await res.text()
+  if (!res.ok) {
+    let msg = raw.slice(0, 240)
+    try {
+      msg = JSON.parse(raw).error?.message ?? msg
+    } catch {
+      /* keep */
+    }
+    const err = new Error(`${model} HTTP ${res.status}: ${msg}`)
+    ;(err as Error & { status?: number }).status = res.status
+    throw err
+  }
+  const json = JSON.parse(raw) as {
+    candidates?: { content?: { parts?: { text?: string }[] } }[]
+  }
+  return json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? ''
+}
+
 /**
- * Primary path: Gemini vision reads the weekly Chinese lunch grid.
- * Uses Firebase web API key / optional VITE_GEMINI_API_KEY (Spark-friendly, no Cloud Functions).
+ * Gemini vision for weekly Chinese lunch grids.
+ * Retries with a smaller image / next model on 503/404/payload errors.
+ * Does not fall back to Tesseract.
  */
 export async function visionExtractDishes(
   imageDataUrl: string,
   onProgress?: VisionProgress,
 ): Promise<{ text: string; dishes: OcrDishDraft[] }> {
-  const apiKey = getApiKey()
-  if (!apiKey) throw new Error('No Gemini/Firebase API key for vision OCR')
+  const apiKeys = getApiKeys()
+  if (!apiKeys.length) {
+    throw new Error('Missing Gemini API key (VITE_GEMINI_API_KEY or VITE_FIREBASE_API_KEY)')
+  }
 
-  onProgress?.('Preparing image for vision…')
-  const prepared = await prepareVisionImage(imageDataUrl)
-  const { mime, data } = await dataUrlToBase64(prepared)
-
+  const widths = [1600, 1200, 1000]
   const models = getModels()
-  let lastErr: Error | null = null
+  const errors: string[] = []
 
-  for (const model of models) {
-    onProgress?.(`Vision reading menu (${model})…`)
+  for (const targetW of widths) {
+    onProgress?.(`Preparing image for Gemini (${targetW}px)…`)
+    let prepared: string
     try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  { text: PROMPT },
-                  { inline_data: { mime_type: mime, data } },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0,
-              responseMimeType: 'application/json',
-            },
-          }),
-        },
-      )
-      const raw = await res.text()
-      if (!res.ok) {
-        let msg = raw.slice(0, 200)
-        try {
-          msg = JSON.parse(raw).error?.message ?? msg
-        } catch {
-          /* keep */
-        }
-        if (res.status === 404 || res.status === 503) {
-          lastErr = new Error(`${model}: ${msg}`)
-          continue
-        }
-        throw new Error(`Vision API ${res.status}: ${msg}`)
-      }
-      const json = JSON.parse(raw) as {
-        candidates?: { content?: { parts?: { text?: string }[] } }[]
-      }
-      const text =
-        json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? ''
-      const dishes = parseVisionJson(text)
-      if (!dishes.length) {
-        lastErr = new Error(`${model} returned no dishes`)
-        continue
-      }
-      onProgress?.(`Vision found ${dishes.length} dishes — review before save`)
-      return { text, dishes }
+      prepared = await prepareVisionImage(imageDataUrl, targetW)
     } catch (e) {
-      lastErr = e instanceof Error ? e : new Error(String(e))
+      errors.push(`prepare@${targetW}: ${e instanceof Error ? e.message : String(e)}`)
+      continue
+    }
+    const { mime, data } = await dataUrlToBase64(prepared)
+    if (data.length > 3_500_000) {
+      errors.push(`payload@${targetW} too large (${Math.round(data.length / 1024)} KB b64)`)
+      continue
+    }
+
+    for (const apiKey of apiKeys) {
+      const keyTag = apiKey === apiKeys[0] ? 'primary-key' : 'firebase-key'
+      for (const model of models) {
+        onProgress?.(`Gemini vision (${model}, ${keyTag})…`)
+        const ctrl = new AbortController()
+        const timer = setTimeout(() => ctrl.abort(), 90_000)
+        try {
+          const text = await callGemini(apiKey, model, mime, data, ctrl.signal)
+          const dishes = parseVisionJson(text)
+          if (!dishes.length) {
+            errors.push(`${model}@${targetW}/${keyTag}: empty dish list`)
+            continue
+          }
+          onProgress?.(`Gemini found ${dishes.length} dishes — review before save`)
+          return { text, dishes }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          const status = (e as Error & { status?: number }).status
+          errors.push(`${model}@${targetW}/${keyTag}: ${msg}`)
+          if (status === 400 || /payload|inline|too large|invalid argument/i.test(msg)) break
+          if (status === 403 || /referer|API_KEY|permission|blocked/i.test(msg)) {
+            // try next API key
+            break
+          }
+          if (msg.includes('abort')) {
+            errors.push('request timed out (90s)')
+            break
+          }
+        } finally {
+          clearTimeout(timer)
+        }
+      }
     }
   }
 
-  throw lastErr ?? new Error('Vision OCR failed')
+  throw new Error(errors.slice(-5).join(' · ') || 'Gemini vision failed')
 }

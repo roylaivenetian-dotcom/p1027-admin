@@ -543,6 +543,13 @@ body {
   color: #b91c1c;
 }
 
+.menu-vision-error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
 .menu-captions-toggle {
   margin-top: 1rem;
 }
