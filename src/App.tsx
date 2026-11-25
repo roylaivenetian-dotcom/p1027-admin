@@ -20,7 +20,7 @@ export default function App() {
     <div className="app-shell">
       <div className="top-bar">
         <div className="brand">
-          <span className="brand-mark">Roy Console</span>
+          <span className="brand-mark">P1027 Admin</span>
           <span className="brand-sub">Food & Leave · 午膳 / 請假</span>
         </div>
         <nav className="tabs">
