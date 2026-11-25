@@ -547,6 +547,139 @@ body {
   margin-top: 1rem;
 }
 
+.menu-paste-zone {
+  border: 2px dashed #94a3b8;
+  background: #f8fafc;
+  padding: 1.25rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  cursor: text;
+  outline: none;
+}
+
+.menu-paste-zone.focused {
+  border-color: #1a1a1a;
+  background: #eef6ff;
+}
+
+.menu-paste-zone.busy {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.menu-ocr-confirm {
+  border: 2px solid var(--line);
+  background: #fff;
+  padding: 1rem 1.1rem 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.menu-ocr-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.menu-ocr-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.menu-ocr-count {
+  font-size: 0.8rem;
+  font-weight: 700;
+  align-self: flex-start;
+  border: 1px solid var(--line);
+  padding: 0.25rem 0.5rem;
+  background: #e8f5ee;
+}
+
+.menu-ocr-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.menu-ocr-image {
+  border: 1px solid var(--line);
+  background: #f1f5f9;
+  overflow: hidden;
+}
+
+.menu-ocr-image img {
+  display: block;
+  width: 100%;
+  max-height: 480px;
+  object-fit: contain;
+}
+
+.menu-ocr-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.menu-ocr-form > label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.menu-ocr-form input,
+.menu-ocr-list input,
+.menu-ocr-list select {
+  font: inherit;
+  font-weight: 400;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid #94a3b8;
+}
+
+.menu-ocr-list {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.menu-ocr-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto auto;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.menu-ocr-price {
+  font-size: 0.8rem;
+  color: var(--muted);
+  min-width: 2.2rem;
+}
+
+@media (max-width: 900px) {
+  .menu-ocr-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-ocr-list li {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .menu-ocr-list li select,
+  .menu-ocr-list li .btn-ghost,
+  .menu-ocr-list li .menu-ocr-price {
+    grid-column: span 1;
+  }
+}
+
 .menu-captions {
   margin-top: 0.75rem;
   padding-top: 0.75rem;

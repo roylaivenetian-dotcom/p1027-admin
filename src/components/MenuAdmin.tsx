@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent } from 'react'
 import type { MenuCategory, MenuItem, MenuPhotoDoc } from '../types'
 import { DRINK_PRICE, MEAL_PRICE, SOUP_PRICE } from '../lib/pricing'
 import { compressMenuImage } from '../lib/menuImage'
 import { todayIsoHkt } from '../lib/dates'
 import { pickMenuPhotoForDate } from '../lib/menuCoverage'
 import { dayBeforeIso, formatMenuRange } from '../lib/menuDates'
+import { ocrMenuImage, slugMenuItemId, type OcrDishDraft } from '../lib/menuOcr'
+import { MenuOcrConfirm } from './MenuOcrConfirm'
 
 interface Props {
   menu: MenuItem[]
@@ -17,11 +19,18 @@ interface Props {
     imageDataUrl: string
     note?: string | null
   }) => Promise<void>
-  /** Close prior open-ended menus the day before a new start (keeps history). */
   onCloseOpenEndedBefore: (newStart: string) => Promise<void>
   onDeletePhoto: (id: string) => Promise<void>
   onSaveItem: (item: MenuItem) => Promise<void>
   onDeleteItem: (id: string) => Promise<void>
+}
+
+type Step = 'idle' | 'confirm' | 'edit-dates'
+
+function priceFor(cat: MenuCategory): number {
+  if (cat === 'drink') return DRINK_PRICE
+  if (cat === 'soup') return SOUP_PRICE
+  return MEAL_PRICE
 }
 
 export function MenuAdmin({
@@ -41,40 +50,95 @@ export function MenuAdmin({
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  /** Date-range / note edit only — never used to replace history with a new upload */
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [step, setStep] = useState<Step>('idle')
+  const [ocrDishes, setOcrDishes] = useState<OcrDishDraft[]>([])
+  const [pasteFocus, setPasteFocus] = useState(false)
 
   const [nameZh, setNameZh] = useState('')
   const [category, setCategory] = useState<MenuCategory>('meal')
   const [showCaptions, setShowCaptions] = useState(false)
+  const pasteRef = useRef<HTMLDivElement>(null)
 
   const sortedPhotos = useMemo(
     () => [...photos].sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom)),
     [photos],
   )
-
   const activeToday = useMemo(() => pickMenuPhotoForDate(photos, todayIsoHkt()), [photos])
 
   useEffect(() => {
     void onRefresh()
   }, [onRefresh])
 
-  async function onFile(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    // New file always means a new menu entry (clear any date-edit mode)
+  const resetForm = useCallback(() => {
+    setEditingId(null)
+    setEffectiveFrom(todayIsoHkt())
+    setEffectiveTo('')
+    setNote('')
+    setPreview(null)
+    setStatus(null)
+    setError(null)
+    setStep('idle')
+    setOcrDishes([])
+  }, [])
+
+  const ingestImageFile = useCallback(async (file: File) => {
     setEditingId(null)
     setError(null)
+    setStep('idle')
+    setOcrDishes([])
+    setBusy(true)
     setStatus('Compressing…')
     try {
       const { dataUrl, bytes } = await compressMenuImage(file)
       setPreview(dataUrl)
-      setStatus(`New menu ready · ${Math.round(bytes / 1024)} KB — will be added (old menus kept)`)
+      setStatus(`OCR… (${Math.round(bytes / 1024)} KB)`)
+      const { dishes } = await ocrMenuImage(dataUrl, (msg) => setStatus(msg))
+      setOcrDishes(
+        dishes.length
+          ? dishes
+          : [
+              {
+                key: `blank-${Date.now()}`,
+                nameZh: '',
+                nameEn: '',
+                category: 'meal',
+              },
+            ],
+      )
+      setStep('confirm')
+      setStatus(
+        dishes.length
+          ? `Review ${dishes.length} dish${dishes.length === 1 ? '' : 'es'} — confirm before save`
+          : 'OCR found no dishes — add rows manually, then confirm',
+      )
     } catch (err) {
       setPreview(null)
+      setStep('idle')
       setError(err instanceof Error ? err.message : String(err))
       setStatus(null)
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
+  async function onFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    await ingestImageFile(file)
+  }
+
+  function onPaste(e: ClipboardEvent) {
+    const items = e.clipboardData?.items
+    if (!items) return
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (file) void ingestImageFile(file)
+        return
+      }
     }
   }
 
@@ -84,23 +148,15 @@ export function MenuAdmin({
     setEffectiveTo(photo.effectiveTo ?? '')
     setNote(photo.note ?? '')
     setPreview(photo.imageDataUrl ?? photo.imageUrl)
+    setStep('edit-dates')
+    setOcrDishes([])
     setError(null)
     setStatus('Editing dates / note only — photo history stays')
   }
 
-  function resetForm() {
-    setEditingId(null)
-    setEffectiveFrom(todayIsoHkt())
-    setEffectiveTo('')
-    setNote('')
-    setPreview(null)
-    setStatus(null)
-    setError(null)
-  }
-
-  async function saveNewPhoto() {
+  async function confirmSave() {
     if (!preview) {
-      setError('Choose a menu photo first')
+      setError('Missing menu photo')
       return
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveFrom)) {
@@ -112,22 +168,41 @@ export function MenuAdmin({
       setError('End date must be on or after the start date')
       return
     }
+    const cleaned = ocrDishes
+      .map((d) => ({
+        ...d,
+        nameZh: d.nameZh.trim(),
+        nameEn: d.nameEn.trim(),
+      }))
+      .filter((d) => d.nameZh.length >= 1)
+
     setBusy(true)
     setError(null)
-    setStatus('Adding menu (keeping previous menus)…')
+    setStatus('Saving photo + dish captions…')
     try {
-      // Close any open-ended earlier menus so ranges chain cleanly; docs stay
       await onCloseOpenEndedBefore(effectiveFrom)
       await onSavePhoto({
-        // Always create a new id — never overwrite another photo's image
         effectiveFrom,
         effectiveTo: end,
         imageDataUrl: preview,
         note: note.trim() || null,
       })
+      for (const d of cleaned) {
+        await onSaveItem({
+          id: slugMenuItemId(d.nameZh),
+          nameZh: d.nameZh,
+          nameEn: d.nameEn || undefined,
+          category: d.category,
+          priceHkd: priceFor(d.category),
+          active: true,
+        })
+      }
       await onRefresh()
+      const n = cleaned.length
       resetForm()
-      setStatus('Added. Previous menus remain listed below for earlier days.')
+      setStatus(
+        `Saved menu photo + ${n} caption${n === 1 ? '' : 's'}. Previous menus remain for earlier days.`,
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setStatus(null)
@@ -174,15 +249,19 @@ export function MenuAdmin({
 
   async function removePhoto(id: string) {
     if (photos.length <= 1) {
-      const ok = confirm(
-        'This is the only menu photo. Delete it anyway? Prefer uploading a new menu with a start date instead of wiping history.',
-      )
-      if (!ok) return
-    } else {
-      const ok = confirm(
+      if (
+        !confirm(
+          'This is the only menu photo. Delete it anyway? Prefer uploading a new menu with a start date instead of wiping history.',
+        )
+      ) {
+        return
+      }
+    } else if (
+      !confirm(
         'Remove this menu from the list? Prefer leaving it dated for earlier days. Upload a new menu to cover later days.',
       )
-      if (!ok) return
+    ) {
+      return
     }
     setBusy(true)
     try {
@@ -198,14 +277,13 @@ export function MenuAdmin({
 
   async function addCaption() {
     if (!nameZh.trim()) return
-    const price = category === 'meal' ? MEAL_PRICE : category === 'drink' ? DRINK_PRICE : SOUP_PRICE
     setBusy(true)
     try {
       await onSaveItem({
-        id: `custom-${Date.now()}`,
+        id: slugMenuItemId(nameZh.trim()),
         nameZh: nameZh.trim(),
         category,
-        priceHkd: price,
+        priceHkd: priceFor(category),
         active: true,
       })
       setNameZh('')
@@ -218,24 +296,20 @@ export function MenuAdmin({
   }
 
   const willCloseHint = useMemo(() => {
-    if (editingId || !effectiveFrom) return null
-    const openPrior = photos.filter(
-      (p) => !p.effectiveTo && p.effectiveFrom < effectiveFrom,
-    )
+    if (step === 'edit-dates' || !effectiveFrom) return null
+    const openPrior = photos.filter((p) => !p.effectiveTo && p.effectiveFrom < effectiveFrom)
     if (!openPrior.length) return null
-    const until = dayBeforeIso(effectiveFrom)
-    return `On save, ${openPrior.length} open-ended menu(s) will end on ${until} (kept for earlier days).`
-  }, [editingId, effectiveFrom, photos])
+    return `On confirm, ${openPrior.length} open-ended menu(s) will end on ${dayBeforeIso(effectiveFrom)} (kept for earlier days).`
+  }, [step, effectiveFrom, photos])
 
   return (
-    <section className="menu-admin">
+    <section className="menu-admin" onPaste={onPaste}>
       <header className="menu-admin-head">
         <div>
           <h2>Fixed menu · 固定菜單</h2>
           <p className="form-hint">
-            Each upload is a <strong>new dated menu</strong>. Mid-week changes keep the old photo for earlier days —
-            menus coexist. Grok picks the photo whose date range covers the order day. Meals HK${MEAL_PRICE} · soup
-            free · drinks +HK${DRINK_PRICE}.
+            Paste or upload a menu <strong>photo</strong> → OCR extracts dishes → review / edit → confirm Save. Mid-week
+            uploads keep older menus for earlier days. Meals HK${MEAL_PRICE} · soup free · drinks +HK${DRINK_PRICE}.
           </p>
         </div>
         {activeToday && (
@@ -245,107 +319,112 @@ export function MenuAdmin({
         )}
       </header>
 
-      <div className="menu-photo-layout">
-        <div className="menu-photo-form">
-          {!editingId ? (
-            <>
-              <label className="menu-file-label">
-                <span>Upload new menu photo</span>
-                <input type="file" accept="image/*" onChange={onFile} disabled={busy} />
-              </label>
-              <div className="menu-date-row">
-                <label>
-                  Starts (required)
-                  <input
-                    type="date"
-                    value={effectiveFrom}
-                    onChange={(e) => setEffectiveFrom(e.target.value)}
-                    disabled={busy}
-                  />
-                </label>
-                <label>
-                  Ends (optional)
-                  <input
-                    type="date"
-                    value={effectiveTo}
-                    onChange={(e) => setEffectiveTo(e.target.value)}
-                    disabled={busy}
-                  />
-                </label>
-              </div>
-              <p className="form-hint">
-                Leave end empty for open-ended. Previous menus stay listed for cross-reference.
-              </p>
-              {willCloseHint && <p className="menu-status">{willCloseHint}</p>}
-              <label>
-                Note (optional)
-                <input
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="e.g. Week of 25 Nov"
-                  disabled={busy}
-                />
-              </label>
-              <div className="menu-photo-actions">
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => void saveNewPhoto()}
-                  disabled={busy || !preview}
+      {step === 'confirm' && preview ? (
+        <>
+          {willCloseHint && <p className="menu-status">{willCloseHint}</p>}
+          <MenuOcrConfirm
+            preview={preview}
+            dishes={ocrDishes}
+            effectiveFrom={effectiveFrom}
+            effectiveTo={effectiveTo}
+            note={note}
+            busy={busy}
+            status={status}
+            error={error}
+            onChangeFrom={setEffectiveFrom}
+            onChangeTo={setEffectiveTo}
+            onChangeNote={setNote}
+            onChangeDish={(key, patch) =>
+              setOcrDishes((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)))
+            }
+            onAddDish={() =>
+              setOcrDishes((rows) => [
+                ...rows,
+                { key: `manual-${Date.now()}`, nameZh: '', nameEn: '', category: 'meal' },
+              ])
+            }
+            onRemoveDish={(key) => setOcrDishes((rows) => rows.filter((r) => r.key !== key))}
+            onConfirm={() => void confirmSave()}
+            onCancel={resetForm}
+          />
+        </>
+      ) : (
+        <div className="menu-photo-layout">
+          <div className="menu-photo-form">
+            {step !== 'edit-dates' ? (
+              <>
+                <div
+                  ref={pasteRef}
+                  className={`menu-paste-zone${pasteFocus ? ' focused' : ''}${busy ? ' busy' : ''}`}
+                  tabIndex={0}
+                  onFocus={() => setPasteFocus(true)}
+                  onBlur={() => setPasteFocus(false)}
+                  onPaste={onPaste}
+                  role="button"
+                  aria-label="Paste menu photo"
                 >
-                  Add menu (keep history)
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="menu-status">Adjust dates / note for this entry. Image is not replaced.</p>
-              <div className="menu-date-row">
-                <label>
-                  Starts
-                  <input
-                    type="date"
-                    value={effectiveFrom}
-                    onChange={(e) => setEffectiveFrom(e.target.value)}
-                    disabled={busy}
-                  />
+                  <strong>Paste menu photo here</strong>
+                  <span className="form-hint">Ctrl/Cmd+V · or choose a file below. OCR runs before save.</span>
+                </div>
+                <label className="menu-file-label">
+                  <span>Or upload file</span>
+                  <input type="file" accept="image/*" onChange={(e) => void onFile(e)} disabled={busy} />
                 </label>
+                {status && <p className="menu-status">{status}</p>}
+                {error && <p className="menu-error">{error}</p>}
+              </>
+            ) : (
+              <>
+                <p className="menu-status">Adjust dates / note for this entry. Image is not replaced.</p>
+                <div className="menu-date-row">
+                  <label>
+                    Starts
+                    <input
+                      type="date"
+                      value={effectiveFrom}
+                      onChange={(e) => setEffectiveFrom(e.target.value)}
+                      disabled={busy}
+                    />
+                  </label>
+                  <label>
+                    Ends (optional)
+                    <input
+                      type="date"
+                      value={effectiveTo}
+                      onChange={(e) => setEffectiveTo(e.target.value)}
+                      disabled={busy}
+                    />
+                  </label>
+                </div>
                 <label>
-                  Ends (optional)
-                  <input
-                    type="date"
-                    value={effectiveTo}
-                    onChange={(e) => setEffectiveTo(e.target.value)}
-                    disabled={busy}
-                  />
+                  Note
+                  <input value={note} onChange={(e) => setNote(e.target.value)} disabled={busy} />
                 </label>
-              </div>
-              <label>
-                Note
-                <input value={note} onChange={(e) => setNote(e.target.value)} disabled={busy} />
-              </label>
-              <div className="menu-photo-actions">
-                <button type="button" className="btn-primary" onClick={() => void saveDateEdit()} disabled={busy}>
-                  Save dates
-                </button>
-                <button type="button" className="btn-ghost" onClick={resetForm} disabled={busy}>
-                  Cancel
-                </button>
-              </div>
-            </>
-          )}
-          {status && <p className="menu-status">{status}</p>}
-          {error && <p className="menu-error">{error}</p>}
-        </div>
+                <div className="menu-photo-actions">
+                  <button type="button" className="btn-primary" onClick={() => void saveDateEdit()} disabled={busy}>
+                    Save dates
+                  </button>
+                  <button type="button" className="btn-ghost" onClick={resetForm} disabled={busy}>
+                    Cancel
+                  </button>
+                </div>
+                {status && <p className="menu-status">{status}</p>}
+                {error && <p className="menu-error">{error}</p>}
+              </>
+            )}
+          </div>
 
-        <div className="menu-photo-preview">
-          {preview ? (
-            <img src={preview} alt="Menu preview" />
-          ) : (
-            <div className="menu-photo-empty">No new photo selected</div>
-          )}
+          <div className="menu-photo-preview">
+            {preview && step === 'edit-dates' ? (
+              <img src={preview} alt="Menu preview" />
+            ) : (
+              <div className="menu-photo-empty">
+                {busy ? 'Working…' : 'Paste or upload a menu photo to start OCR'}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <h3 className="menu-section-title">All menus (by start date) · cross-reference</h3>
       <p className="form-hint">
@@ -353,7 +432,7 @@ export function MenuAdmin({
         still match the correct photo.
       </p>
       <ul className="menu-photo-list">
-        {sortedPhotos.length === 0 && <li className="form-hint">No menu photos yet — upload the first set menu.</li>}
+        {sortedPhotos.length === 0 && <li className="form-hint">No menu photos yet — paste or upload the first set menu.</li>}
         {sortedPhotos.map((p) => {
           const src = p.imageDataUrl || p.imageUrl
           const isActive = activeToday?.id === p.id
@@ -380,14 +459,13 @@ export function MenuAdmin({
       </ul>
 
       <button type="button" className="btn-ghost menu-captions-toggle" onClick={() => setShowCaptions((v) => !v)}>
-        {showCaptions ? 'Hide' : 'Show'} optional dish captions (text hints)
+        {showCaptions ? 'Hide' : 'Show'} saved dish captions (menuItems)
       </button>
 
       {showCaptions && (
         <div className="menu-captions">
           <p className="form-hint">
-            Optional aliases in <code>menuItems</code>. Primary matching is the dated photo in{' '}
-            <code>menuPhotos</code>.
+            Text captions from OCR confirm (and manual adds). Primary matching is still the dated photo.
           </p>
           <div className="menu-add">
             <input
@@ -413,7 +491,8 @@ export function MenuAdmin({
             {menu.map((m) => (
               <li key={m.id} className={!m.active ? 'inactive' : undefined}>
                 <span>
-                  <strong>{m.nameZh}</strong> · {m.category} · ${m.priceHkd}
+                  <strong>{m.nameZh}</strong>
+                  {m.nameEn ? ` · ${m.nameEn}` : ''} · {m.category} · ${m.priceHkd}
                 </span>
                 <span className="menu-actions">
                   <button
