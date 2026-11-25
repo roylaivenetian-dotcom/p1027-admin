@@ -25,13 +25,16 @@
       "fields": {
         "person": "string",
         "month": "YYYY-MM",
-        "type": "string (default leave)",
-        "dates": "string[]",
+        "type": "annual|sick|special (aliases: leave→AL; cl|compensatory|unpaid|other→Special)",
+        "dates": "string[] YYYY-MM-DD",
+        "halfDay": "AM|PM|null — single-date only",
         "note": "string|null",
         "sourceJid": "string|null",
         "sourceMessageId": "string|null",
-        "updatedAt": "ISO string"
-      }
+        "updatedAt": "ISO string",
+        "writeToken": "string — Spark client writes"
+      },
+      "uiColumns": ["Annual leave (AL)", "Sick leave (SL)", "Special (CL / other)"]
     },
     "weeklyReports": {
       "docId": "{weekStart}_{weekEnd}",

@@ -232,7 +232,14 @@ body {
   background: var(--panel);
   border: 2px solid var(--line);
   padding: 1rem 1.25rem 1.25rem;
-  max-width: 42rem;
+  max-width: 72rem;
+}
+
+.leave-summary-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem 1.5rem;
+  align-items: start;
 }
 
 .leave-summary-head {
@@ -258,7 +265,8 @@ body {
 }
 
 .leave-section {
-  margin-bottom: 1.1rem;
+  margin-bottom: 0;
+  min-width: 0;
 }
 
 .leave-section-title {
@@ -745,6 +753,13 @@ body {
   align-items: center;
   gap: 0.5rem;
   margin-top: 1rem;
+}
+
+@media (max-width: 900px) {
+  .leave-summary-columns {
+    grid-template-columns: 1fr;
+    gap: 1.1rem;
+  }
 }
 
 @media (max-width: 720px) {

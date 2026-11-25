@@ -94,14 +94,17 @@ export interface FoodOrderDoc {
 
 /**
  * Firestore `leaveRequests/{recordId}`
- * Display groups: annual → "Annual leave (AL)", sick → "Sick leave (SL)"
+ * Display columns: annual → AL, sick → SL, special/cl/… → Special (CL / other)
  */
 export interface LeaveRecordDoc {
   id: string
   person: string
   /** YYYY-MM */
   month: string
-  /** annual | sick | leave | unpaid | other — UI maps annual/leave → AL, sick → SL */
+  /**
+   * Canonical: `annual` | `sick` | `special`.
+   * Also: `leave` → AL; `cl` / `compensatory` / `unpaid` / `other` → Special.
+   */
   type: string
   dates: string[]
   /** Half-day qualifier for single-date entries */
@@ -143,7 +146,15 @@ export interface FoodOrderView {
   status: OrderLineStatus
 }
 
-export type LeaveType = 'annual' | 'sick' | 'unpaid' | 'leave' | 'other'
+export type LeaveType =
+  | 'annual'
+  | 'sick'
+  | 'special'
+  | 'cl'
+  | 'compensatory'
+  | 'unpaid'
+  | 'leave'
+  | 'other'
 
 export interface LeaveView {
   id: string

@@ -2,13 +2,21 @@ import type { LeaveRecordDoc } from '../types'
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-export type LeaveBucket = 'AL' | 'SL' | 'other'
+/** Display columns: Annual (AL), Sick (SL), Special (CL / compensatory / unpaid / other). */
+export type LeaveBucket = 'AL' | 'SL' | 'Special'
 
+/**
+ * Map leaveRequests.type → summary column.
+ * Canonical: `annual` | `sick` | `special`.
+ * Special aliases: `cl`, `compensatory`, `unpaid`, `other`, 補假 / 特假.
+ * AL also accepts `leave` / 年假 / 請假; SL accepts `sl` / 病假.
+ */
 export function leaveBucket(type: string): LeaveBucket {
   const t = type.trim().toLowerCase()
   if (t === 'sick' || t === 'sl' || t === '病假') return 'SL'
   if (t === 'annual' || t === 'al' || t === 'leave' || t === '年假' || t === '請假') return 'AL'
-  return 'other'
+  // special | cl | compensatory | unpaid | other | …
+  return 'Special'
 }
 
 function dayNum(iso: string): number {
