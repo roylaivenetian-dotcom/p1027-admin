@@ -40,12 +40,12 @@ export function LeavePanel({
   const [halfDay, setHalfDay] = useState<'' | 'AM' | 'PM'>('')
   const [note, setNote] = useState('')
 
-  const { al, sl, other } = useMemo(() => {
+  const { al, sl, special } = useMemo(() => {
     const rows = leave.filter((l) => l.month === monthFilter).sort(sortLeaveRecords)
     return {
       al: rows.filter((l) => leaveBucket(l.type) === 'AL'),
       sl: rows.filter((l) => leaveBucket(l.type) === 'SL'),
-      other: rows.filter((l) => leaveBucket(l.type) === 'other'),
+      special: rows.filter((l) => leaveBucket(l.type) === 'Special'),
     }
   }, [leave, monthFilter])
 
@@ -91,12 +91,14 @@ export function LeavePanel({
           {firstDay && <span className="leave-window-tag">1st · leave window open</span>}
         </header>
 
-        <LeaveSection title="Annual leave (AL)" records={al} onCancel={onCancel} />
-        <LeaveSection title="Sick leave (SL)" records={sl} onCancel={onCancel} />
-        {other.length > 0 && <LeaveSection title="Other" records={other} onCancel={onCancel} />}
+        <div className="leave-summary-columns">
+          <LeaveSection title="Annual leave (AL)" records={al} onCancel={onCancel} />
+          <LeaveSection title="Sick leave (SL)" records={sl} onCancel={onCancel} />
+          <LeaveSection title="Special (CL / other)" records={special} onCancel={onCancel} />
+        </div>
 
         <p className="board-footnote">
-          Summary style for P1027 Admin Group. Lines: <code>3 Nov — Name</code>,{' '}
+          Three columns: AL · SL · Special. Lines: <code>3 Nov — Name</code>,{' '}
           <code>4 Nov, PM — Name</code>, <code>2–4 Nov — Name</code>. Collection: leaveRequests.
         </p>
       </article>
@@ -128,6 +130,8 @@ export function LeavePanel({
               <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
                 <option value="annual">Annual leave (AL)</option>
                 <option value="sick">Sick leave (SL)</option>
+                <option value="special">Special</option>
+                <option value="cl">Compensatory (CL)</option>
                 <option value="unpaid">Unpaid</option>
                 <option value="other">Other</option>
               </select>
