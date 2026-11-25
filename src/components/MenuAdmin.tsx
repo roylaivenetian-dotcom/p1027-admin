@@ -100,7 +100,7 @@ export function MenuAdmin({
       setOcrDishes(
         dishes.length
           ? dishes
-          : [{ key: `blank-${Date.now()}`, nameZh: '', nameEn: '', category: 'meal' }],
+          : [{ key: `blank-${Date.now()}`, nameZh: '', nameEn: '', category: 'meal', weekday: null }],
       )
       setStep('confirm')
       setStatus(
@@ -215,10 +215,11 @@ export function MenuAdmin({
       })
       for (const d of cleaned) {
         await onSaveItem({
-          id: slugMenuItemId(d.nameZh),
+          id: slugMenuItemId(d.nameZh, d.weekday),
           nameZh: d.nameZh,
           nameEn: d.nameEn || undefined,
           category: d.category,
+          weekday: d.weekday,
           priceHkd: priceFor(d.category),
           active: true,
         })
@@ -367,7 +368,7 @@ export function MenuAdmin({
             onAddDish={() =>
               setOcrDishes((rows) => [
                 ...rows,
-                { key: `manual-${Date.now()}`, nameZh: '', nameEn: '', category: 'meal' },
+                { key: `manual-${Date.now()}`, nameZh: '', nameEn: '', category: 'meal', weekday: null },
               ])
             }
             onRemoveDish={(key) => setOcrDishes((rows) => rows.filter((r) => r.key !== key))}
@@ -533,6 +534,7 @@ export function MenuAdmin({
               <li key={m.id} className={!m.active ? 'inactive' : undefined}>
                 <span>
                   <strong>{m.nameZh}</strong>
+                  {m.weekday ? ` · ${m.weekday}` : ''}
                   {m.nameEn ? ` · ${m.nameEn}` : ''} · {m.category} · ${m.priceHkd}
                 </span>
                 <span className="menu-actions">

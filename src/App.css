@@ -660,9 +660,13 @@ body {
 
 .menu-ocr-list li {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto auto;
+  grid-template-columns: 5.5rem minmax(0, 1.2fr) minmax(0, 0.9fr) auto auto auto;
   gap: 0.35rem;
   align-items: center;
+}
+
+.menu-ocr-weekday {
+  font-size: 0.8rem;
 }
 
 .menu-ocr-price {

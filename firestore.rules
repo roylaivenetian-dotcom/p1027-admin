@@ -42,7 +42,13 @@ service cloud.firestore {
       return request.resource.data.keys().hasAll(['nameZh', 'category', 'priceHkd', 'active', 'updatedAt', 'writeToken'])
         && request.resource.data.nameZh is string
         && request.resource.data.category is string
-        && request.resource.data.priceHkd is number;
+        && request.resource.data.priceHkd is number
+        && (
+          !('weekday' in request.resource.data)
+          || request.resource.data.weekday == null
+          || (request.resource.data.weekday is string
+              && request.resource.data.weekday.matches('^(mon|tue|wed|thu|fri|sat)$'))
+        );
     }
 
     function isValidMenuPhoto() {

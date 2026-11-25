@@ -1,6 +1,11 @@
 import type { MenuCategory } from '../types'
 import type { OcrDishDraft } from '../lib/menuOcr'
 import { DRINK_PRICE, MEAL_PRICE, SOUP_PRICE } from '../lib/pricing'
+import {
+  MENU_WEEKDAYS,
+  WEEKDAY_LABEL_ZH,
+  type MenuWeekday,
+} from '../lib/menuWeekday'
 
 interface Props {
   preview: string
@@ -45,17 +50,22 @@ export function MenuOcrConfirm({
   onConfirm,
   onCancel,
 }: Props) {
+  const missingDay = dishes.filter((d) => d.nameZh.trim() && !d.weekday).length
+
   return (
     <section className="menu-ocr-confirm" aria-label="Confirm OCR dishes">
       <header className="menu-ocr-head">
         <div>
           <h3>Review dishes · 確認菜式</h3>
           <p className="form-hint">
-            Vision read of the menu photo. Edit names, add/remove rows, set dates, then confirm Save. Nothing is
-            written until you confirm.
+            Each row is one dish on one weekday column (星期一–六). Same name on another day stays a separate
+            row. Edit, then confirm Save — nothing is written until you confirm.
           </p>
         </div>
-        <span className="menu-ocr-count">{dishes.length} dish{dishes.length === 1 ? '' : 'es'}</span>
+        <span className="menu-ocr-count">
+          {dishes.length} dish{dishes.length === 1 ? '' : 'es'}
+          {missingDay ? ` · ${missingDay} missing day` : ''}
+        </span>
       </header>
 
       <div className="menu-ocr-layout">
@@ -90,6 +100,24 @@ export function MenuOcrConfirm({
             )}
             {dishes.map((d) => (
               <li key={d.key}>
+                <select
+                  className="menu-ocr-weekday"
+                  value={d.weekday ?? ''}
+                  onChange={(e) =>
+                    onChangeDish(d.key, {
+                      weekday: (e.target.value || null) as MenuWeekday | null,
+                    })
+                  }
+                  disabled={busy}
+                  aria-label="Weekday"
+                >
+                  <option value="">Day…</option>
+                  {MENU_WEEKDAYS.map((w) => (
+                    <option key={w} value={w}>
+                      {WEEKDAY_LABEL_ZH[w]}
+                    </option>
+                  ))}
+                </select>
                 <input
                   className="menu-ocr-name"
                   value={d.nameZh}

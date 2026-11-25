@@ -1,5 +1,6 @@
 import type { MenuCategory } from '../types'
 import type { OcrDishDraft } from './menuOcrParse'
+import { normalizeMenuWeekday } from './menuWeekday'
 import {
   createMenuVisionJob,
   fetchMenuVisionJob,
@@ -51,13 +52,17 @@ function dishesFromJob(raw: unknown): OcrDishDraft[] {
       .replace(/\s+/g, '')
       .trim()
     nameZh = applyTradFixes(nameZh)
-    if (!looksLikeDish(nameZh) || seen.has(nameZh)) continue
-    seen.add(nameZh)
+    const weekday =
+      normalizeMenuWeekday(r.weekday ?? r.day ?? r.weekdayZh ?? r.weekDay) ?? null
+    const dedupe = `${weekday ?? ''}:${nameZh}`
+    if (!looksLikeDish(nameZh) || seen.has(dedupe)) continue
+    seen.add(dedupe)
     out.push({
       key: `vision-${out.length}-${Date.now()}`,
       nameZh,
       nameEn: '',
       category: normalizeCategory(r.category),
+      weekday,
     })
   }
   return out

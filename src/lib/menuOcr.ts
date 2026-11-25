@@ -29,9 +29,10 @@ export async function ocrMenuImage(
   }
 }
 
-export function slugMenuItemId(nameZh: string): string {
+export function slugMenuItemId(nameZh: string, weekday?: string | null): string {
   const base = nameZh.trim().replace(/\s+/g, '').slice(0, 40)
-  return `cap_${base || 'item'}_${Math.abs(hash(nameZh))}`
+  const day = weekday?.trim() ? `_${weekday.trim()}` : ''
+  return `cap_${base || 'item'}${day}_${Math.abs(hash(`${weekday ?? ''}|${nameZh}`))}`
 }
 
 function hash(s: string): number {

@@ -1,10 +1,13 @@
 import type { MenuCategory } from '../types'
+import { normalizeMenuWeekday, type MenuWeekday } from './menuWeekday'
 
 export type OcrDishDraft = {
   key: string
   nameZh: string
   nameEn: string
   category: MenuCategory
+  /** Weekly grid column; required for day-accurate pricing */
+  weekday: MenuWeekday | null
 }
 
 const DISH_END = /(?:飯|麵|面|粉|粥|河|米|粉麵)(?:\([^)]{0,40}\))?$/
@@ -89,28 +92,31 @@ export function parseDayCellText(text: string, keyPrefix: string): OcrDishDraft[
     }
   }
 
+  const weekday = normalizeMenuWeekday(keyPrefix)
   const out: OcrDishDraft[] = []
   const seen = new Set<string>()
   for (const nameZh of found) {
-    if (seen.has(nameZh)) continue
-    seen.add(nameZh)
+    const dedupe = `${weekday ?? ''}:${nameZh}`
+    if (seen.has(dedupe)) continue
+    seen.add(dedupe)
     out.push({
       key: `${keyPrefix}-${out.length}`,
       nameZh,
       nameEn: '', // never invent English from OCR noise
       category: guessCategory(nameZh),
+      weekday,
     })
   }
   return out
 }
 
-/** Merge day cells; keep unique dishes in discovery order. */
+/** Merge day cells; unique per weekday + name. */
 export function mergeDishDrafts(groups: OcrDishDraft[][]): OcrDishDraft[] {
   const out: OcrDishDraft[] = []
   const seen = new Set<string>()
   for (const group of groups) {
     for (const d of group) {
-      const k = d.nameZh
+      const k = `${d.weekday ?? ''}:${d.nameZh}`
       if (seen.has(k)) continue
       seen.add(k)
       out.push({ ...d, key: `ocr-${out.length}-${Date.now()}` })

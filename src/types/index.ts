@@ -1,6 +1,10 @@
 /** Domain types aligned with whatsapp-food-feed Bot feed (see docs/food-leave-app.md). */
 
+import type { MenuWeekday } from '../lib/menuWeekday'
+
 export type MenuCategory = 'meal' | 'soup' | 'drink' | 'other'
+
+export type { MenuWeekday }
 
 export interface Person {
   id: string
@@ -17,6 +21,11 @@ export interface MenuItem {
   nameEn?: string
   category: MenuCategory
   priceHkd: number
+  /**
+   * Weekly grid column: mon–sat.
+   * Monday orders may only match dishes with weekday mon (or null = legacy unknown).
+   */
+  weekday?: MenuWeekday | null
   aliases?: string[]
   active: boolean
   /** Present on Spark client writes */
@@ -31,6 +40,8 @@ export interface MenuVisionDish {
   nameZh: string
   nameEn?: string
   category?: MenuCategory
+  /** mon | tue | wed | thu | fri | sat or 星期一… */
+  weekday?: string | null
 }
 
 export interface MenuVisionJobDoc {
