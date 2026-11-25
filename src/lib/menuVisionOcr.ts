@@ -5,15 +5,14 @@ export type VisionProgress = (msg: string) => void
 
 const DEFAULT_MODELS = [
   'gemini-3.5-flash',
-  'gemini-flash-latest',
   'gemini-3.8-flash',
-  'gemini-2.5-flash',
+  'gemini-flash-latest',
+  'gemini-3.5-flash-lite',
 ]
 
 function getApiKey(): string | null {
   const dedicated = import.meta.env.VITE_GEMINI_API_KEY as string | undefined
   if (dedicated && !dedicated.includes('YOUR_') && dedicated.length > 20) return dedicated
-  // Firebase web API key works for Generative Language when enabled on the project
   const fb = import.meta.env.VITE_FIREBASE_API_KEY as string | undefined
   if (fb && !fb.includes('YOUR_') && fb.length > 20) return fb
   return null
@@ -25,19 +24,44 @@ function getModels(): string[] {
   return DEFAULT_MODELS
 }
 
-const PROMPT = `你是香港茶餐廳每週午膳菜單閱讀助手。圖片通常是「鴻運美德小館」風格：星期一至星期六六欄，每欄編號 1–9 的中文飯菜。
+const PROMPT = `你是香港繁體中文菜單逐字抄寫員（不是簡體翻譯器、不是同音猜字）。任務：從每週午膳菜單照片準確抄出每道菜的繁體中文菜名。
+
+圖片通常是「鴻運美德小館」風格：星期一至星期六六欄，每欄編號 1–9。
 
 只輸出 JSON（不要 markdown code fence）：
-{"dishes":[{"nameZh":"中文菜名","nameEn":"","category":"meal"}]}
+{"dishes":[{"nameZh":"繁體中文菜名","nameEn":"","category":"meal"}]}
 
-規則：
-1. 每一道真正的菜一個物件；不要把不同欄/日子的菜黏在一起。
-2. 去掉編號（1. 2.）與價錢符號。
-3. nameEn 一律空字串，除非菜單上清楚印了英文菜名（不要亂猜、不要輸出 OCR 雜訊英文）。
-4. 忽略店名、電話、外賣說明、表格線、星期標題（星期一…星期六）。
-5. category 只能是 meal / soup / drink（飯/麵/粉類=meal）。
-6. 同一菜名（例如每日都有的「燒味飯」「經典豉油西餐飯」）只列一次。
-7. 盡量列出整週所有不同菜式。`
+嚴格規則：
+1. 必須用「繁體中文」字形。不要簡化、不要用同音/近形字代替。
+2. 逐字對照照片筆畫；不確定就再看清楚，不要發明常見錯字。
+3. 常見易錯字（必須按照片正確字，以下為提醒）：
+   - 韭菜／韭菜花（绝不是「九菜」）
+   - 芥蘭（绝不是「介蘭」）
+   - 蘿蔔（绝不是「羅白／羅蔔」）
+   - 炆、豉、燒、炒、炸、焗、扒、腩、鯪、魷
+   - 豆卜、豬手、豬頸肉、涼瓜、椰汁、香芋
+4. 一菜一列；勿把相鄰日子欄位黏在一起。去掉 1. 2. 編號與價錢。
+5. nameEn 一律 ""（除非照片清楚印了英文；不要亂猜英文）。
+6. 忽略店名、電話、外賣說明、星期標題、表格線。
+7. 同名菜（如每日「燒味飯」「經典豉油西餐飯…」）只列一次。
+8. category 只能是 meal / soup / drink（飯麵粉類=meal）。`
+
+/** Safety-net corrections for frequent HK lunch-menu OCR mixups (only exact/substring safe swaps). */
+const TRAD_FIXES: [RegExp, string][] = [
+  [/九菜花/g, '韭菜花'],
+  [/九菜/g, '韭菜'],
+  [/介蘭/g, '芥蘭'],
+  [/羅白/g, '蘿蔔'],
+  [/羅蔔/g, '蘿蔔'],
+  [/椒汁香芋/g, '椰汁香芋'],
+  [/鯪魚球/g, '鯪魚球'],
+]
+
+function applyTradFixes(name: string): string {
+  let s = name
+  for (const [re, to] of TRAD_FIXES) s = s.replace(re, to)
+  return s
+}
 
 function normalizeCategory(c: unknown): MenuCategory {
   const s = String(c ?? 'meal').toLowerCase()
@@ -71,10 +95,11 @@ function parseVisionJson(raw: string): OcrDishDraft[] {
   for (const row of data.dishes ?? []) {
     if (!row || typeof row !== 'object') continue
     const r = row as Record<string, unknown>
-    const nameZh = String(r.nameZh ?? r.name ?? '')
+    let nameZh = String(r.nameZh ?? r.name ?? '')
       .replace(/^\d+\s*[.．、\)]\s*/, '')
       .replace(/\s+/g, '')
       .trim()
+    nameZh = applyTradFixes(nameZh)
     if (!looksLikeDish(nameZh) || seen.has(nameZh)) continue
     seen.add(nameZh)
     const nameEnRaw = String(r.nameEn ?? '').trim()
@@ -95,7 +120,6 @@ function parseVisionJson(raw: string): OcrDishDraft[] {
 async function dataUrlToBase64(dataUrl: string): Promise<{ mime: string; data: string }> {
   const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
   if (m) return { mime: m[1]!, data: m[2]! }
-  // fetch blob url / http
   const res = await fetch(dataUrl)
   const blob = await res.blob()
   const buf = await blob.arrayBuffer()
@@ -105,7 +129,10 @@ async function dataUrlToBase64(dataUrl: string): Promise<{ mime: string; data: s
   return { mime: blob.type || 'image/jpeg', data: btoa(binary) }
 }
 
-/** Downscale for vision API (keeps enough detail for weekly grids). */
+/**
+ * Upscale small phone/screenshot crops and mild-sharpen so Traditional strokes stay readable.
+ * Prefer sending a larger, sharper JPEG to vision (not the Firestore-compressed copy alone).
+ */
 export async function prepareVisionImage(dataUrl: string): Promise<string> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const el = new Image()
@@ -113,17 +140,46 @@ export async function prepareVisionImage(dataUrl: string): Promise<string> {
     el.onerror = () => reject(new Error('Vision image load failed'))
     el.src = dataUrl
   })
-  const maxW = 1400
-  const scale = Math.min(1, maxW / img.width)
-  const w = Math.max(1, Math.round(img.width * scale))
-  const h = Math.max(1, Math.round(img.height * scale))
+  const targetW = 2000
+  const scale = Math.max(1, targetW / img.width) // upscale when small; keep native if already large
+  const w = Math.min(2200, Math.round(img.width * Math.min(scale, 2200 / img.width)))
+  const h = Math.round((img.height / img.width) * w)
   const canvas = document.createElement('canvas')
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext('2d')
   if (!ctx) return dataUrl
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(img, 0, 0, w, h)
-  return canvas.toDataURL('image/jpeg', 0.88)
+
+  // Mild unsharp via canvas (helps 炆/豉/韭 strokes)
+  try {
+    const blur = document.createElement('canvas')
+    blur.width = w
+    blur.height = h
+    const bctx = blur.getContext('2d')
+    if (bctx) {
+      bctx.filter = 'blur(0.6px)'
+      bctx.drawImage(canvas, 0, 0)
+      const sharp = ctx.getImageData(0, 0, w, h)
+      const soft = bctx.getImageData(0, 0, w, h)
+      const s = sharp.data
+      const u = soft.data
+      const amount = 1.25
+      for (let i = 0; i < s.length; i += 4) {
+        for (let c = 0; c < 3; c++) {
+          const v = s[i + c]! + amount * (s[i + c]! - u[i + c]!)
+          s[i + c] = Math.max(0, Math.min(255, v))
+        }
+      }
+      ctx.putImageData(sharp, 0, 0)
+    }
+  } catch {
+    /* sharpen optional */
+  }
+
+  return canvas.toDataURL('image/jpeg', 0.95)
 }
 
 export function visionConfigured(): boolean {
@@ -167,7 +223,7 @@ export async function visionExtractDishes(
               },
             ],
             generationConfig: {
-              temperature: 0.1,
+              temperature: 0,
               responseMimeType: 'application/json',
             },
           }),
@@ -181,7 +237,6 @@ export async function visionExtractDishes(
         } catch {
           /* keep */
         }
-        // try next model on 404/503
         if (res.status === 404 || res.status === 503) {
           lastErr = new Error(`${model}: ${msg}`)
           continue
