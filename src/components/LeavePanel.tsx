@@ -1,8 +1,13 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import type { LeaveRecordDoc, Person } from '../types'
-import { comingMonthKey, hktParts, isFirstOfMonthHkt, monthKey } from '../lib/dates'
+import { MonthNav } from './MonthNav'
+import { formatLeaveBullet, leaveBucket, sortLeaveRecords } from '../lib/leaveFormat'
+import { isFirstOfMonthHkt, monthKey } from '../lib/dates'
 
 interface Props {
+  year: number
+  month: number
+  onMonthChange: (year: number, month: number) => void
   people: Person[]
   leave: LeaveRecordDoc[]
   onSubmit: (payload: {
@@ -10,28 +15,45 @@ interface Props {
     month: string
     type: string
     dates: string[]
+    halfDay?: 'AM' | 'PM' | null
     note?: string
   }) => void
   onCancel: (id: string) => void
 }
 
-export function LeavePanel({ people, leave, onSubmit, onCancel }: Props) {
+export function LeavePanel({
+  year,
+  month,
+  onMonthChange,
+  people,
+  leave,
+  onSubmit,
+  onCancel,
+}: Props) {
+  const monthFilter = monthKey(year, month)
   const firstDay = isFirstOfMonthHkt()
-  const targetMonth = comingMonthKey()
-  const todayParts = hktParts()
-  const thisMonthKey = monthKey(todayParts.year, todayParts.month)
-
+  const [showAdd, setShowAdd] = useState(false)
   const [person, setPerson] = useState(people[0]?.name ?? 'Ken')
-  const [startDate, setStartDate] = useState(`${targetMonth}-01`)
-  const [endDate, setEndDate] = useState(`${targetMonth}-01`)
-  const [leaveType, setLeaveType] = useState('leave')
+  const [startDate, setStartDate] = useState(`${monthFilter}-01`)
+  const [endDate, setEndDate] = useState(`${monthFilter}-01`)
+  const [leaveType, setLeaveType] = useState('annual')
+  const [halfDay, setHalfDay] = useState<'' | 'AM' | 'PM'>('')
   const [note, setNote] = useState('')
-  const [monthFilter, setMonthFilter] = useState(targetMonth)
 
-  const visible = useMemo(
-    () => leave.filter((l) => l.month === monthFilter),
-    [leave, monthFilter],
-  )
+  const { al, sl, other } = useMemo(() => {
+    const rows = leave.filter((l) => l.month === monthFilter).sort(sortLeaveRecords)
+    return {
+      al: rows.filter((l) => leaveBucket(l.type) === 'AL'),
+      sl: rows.filter((l) => leaveBucket(l.type) === 'SL'),
+      other: rows.filter((l) => leaveBucket(l.type) === 'other'),
+    }
+  }, [leave, monthFilter])
+
+  const monthLabel = new Date(Date.UTC(year, month - 1, 1)).toLocaleString('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
 
   function datesBetween(start: string, end: string): string[] {
     const out: string[] = []
@@ -46,50 +68,70 @@ export function LeavePanel({ people, leave, onSubmit, onCancel }: Props) {
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    const dates = datesBetween(startDate, endDate)
     onSubmit({
       person,
-      month: targetMonth,
+      month: monthFilter,
       type: leaveType,
-      dates: datesBetween(startDate, endDate),
+      dates,
+      halfDay: dates.length === 1 && halfDay ? halfDay : null,
       note: note.trim() || undefined,
     })
     setNote('')
+    setShowAdd(false)
   }
 
   return (
-    <section className={`leave-panel${firstDay ? ' leave-open' : ''}`}>
-      <div className="leave-banner">
-        {firstDay ? (
-          <>
-            <strong>今天是每月 1 號 — Leave window open</strong>
-            <span>Submit leave for {targetMonth} (coming month). Collection: leaveRequests.</span>
-          </>
-        ) : (
-          <>
-            <strong>Leave applications</strong>
-            <span>
-              Primary collection day is the 1st of each month (Asia/Hong_Kong). Form targets {targetMonth}.
-            </span>
-          </>
-        )}
+    <section className={`leave-board${firstDay ? ' leave-open' : ''}`}>
+      <MonthNav year={year} month={month} onChange={onMonthChange} />
+
+      <article className="leave-summary-panel">
+        <header className="leave-summary-head">
+          <h2>P1027 Admin Group · leave · {monthLabel}</h2>
+          {firstDay && <span className="leave-window-tag">1st · leave window open</span>}
+        </header>
+
+        <LeaveSection title="Annual leave (AL)" records={al} onCancel={onCancel} />
+        <LeaveSection title="Sick leave (SL)" records={sl} onCancel={onCancel} />
+        {other.length > 0 && <LeaveSection title="Other" records={other} onCancel={onCancel} />}
+
+        <p className="board-footnote">
+          Summary style for P1027 Admin Group. Lines: <code>3 Nov — Name</code>,{' '}
+          <code>4 Nov, PM — Name</code>, <code>2–4 Nov — Name</code>. Collection: leaveRequests.
+        </p>
+      </article>
+
+      <div className="leave-add-bar">
+        <button type="button" className="btn-ghost" onClick={() => setShowAdd((v) => !v)}>
+          {showAdd ? 'Hide add form' : 'Add leave record'}
+        </button>
       </div>
 
-      <div className="leave-layout">
-        <form className="leave-form" onSubmit={handleSubmit}>
-          <h2>Apply for leave · {targetMonth}</h2>
-          <label>
-            Person
-            <select value={person} onChange={(e) => setPerson(e.target.value)} required>
-              {people
-                .filter((p) => p.active)
-                .map((p) => (
-                  <option key={p.id} value={p.name}>
-                    {p.name}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <div className="leave-dates">
+      {showAdd && (
+        <form className="leave-form leave-form-compact" onSubmit={handleSubmit}>
+          <h3>Add · {monthFilter}</h3>
+          <div className="leave-form-grid">
+            <label>
+              Person
+              <select value={person} onChange={(e) => setPerson(e.target.value)} required>
+                {people
+                  .filter((p) => p.active)
+                  .map((p) => (
+                    <option key={p.id} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Type
+              <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
+                <option value="annual">Annual leave (AL)</option>
+                <option value="sick">Sick leave (SL)</option>
+                <option value="unpaid">Unpaid</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
             <label>
               Start
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
@@ -98,59 +140,54 @@ export function LeavePanel({ people, leave, onSubmit, onCancel }: Props) {
               End
               <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
             </label>
+            <label>
+              Half-day (single date)
+              <select value={halfDay} onChange={(e) => setHalfDay(e.target.value as '' | 'AM' | 'PM')}>
+                <option value="">Full day</option>
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </select>
+            </label>
+            <label>
+              Note
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" />
+            </label>
           </div>
-          <label>
-            Type
-            <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
-              <option value="leave">Leave / 請假</option>
-              <option value="annual">Annual / 年假</option>
-              <option value="sick">Sick / 病假</option>
-              <option value="unpaid">Unpaid / 無薪</option>
-              <option value="other">Other / 其他</option>
-            </select>
-          </label>
-          <label>
-            Note
-            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Optional" />
-          </label>
           <button type="submit" className="btn-primary">
-            Submit leave record
+            Save
           </button>
-          <p className="form-hint">
-            Self-serve record (approval TBD). Writes leaveRequests shape. Today HKT: {thisMonthKey}-
-            {String(todayParts.day).padStart(2, '0')}.
-          </p>
         </form>
-
-        <div className="leave-list">
-          <div className="leave-list-head">
-            <h2>Records</h2>
-            <input
-              type="month"
-              value={monthFilter}
-              onChange={(e) => setMonthFilter(e.target.value)}
-              aria-label="Filter month"
-            />
-          </div>
-          {visible.length === 0 && <p className="empty-week">No leave records for {monthFilter}</p>}
-          <ul>
-            {visible.map((l) => (
-              <li key={l.id} className="leave-item">
-                <div>
-                  <strong>{l.person}</strong> · {l.type}
-                  <div className="leave-meta">
-                    {l.dates.length ? `${l.dates[0]} → ${l.dates[l.dates.length - 1]} (${l.dates.length}d)` : '—'}
-                    {l.note ? ` · ${l.note}` : ''}
-                  </div>
-                </div>
-                <button type="button" className="btn-ghost" onClick={() => onCancel(l.id)}>
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
+      )}
     </section>
+  )
+}
+
+function LeaveSection({
+  title,
+  records,
+  onCancel,
+}: {
+  title: string
+  records: LeaveRecordDoc[]
+  onCancel: (id: string) => void
+}) {
+  return (
+    <div className="leave-section">
+      <h3 className="leave-section-title">{title}:</h3>
+      {records.length === 0 ? (
+        <p className="leave-empty">—</p>
+      ) : (
+        <ul className="leave-bullets">
+          {records.map((l) => (
+            <li key={l.id}>
+              <span>{formatLeaveBullet(l)}</span>
+              <button type="button" className="btn-ghost leave-remove" onClick={() => onCancel(l.id)} aria-label={`Remove ${l.person}`}>
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }

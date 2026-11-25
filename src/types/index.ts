@@ -43,14 +43,18 @@ export interface FoodOrderDoc {
 
 /**
  * Firestore `leaveRequests/{recordId}`
+ * Display groups: annual → "Annual leave (AL)", sick → "Sick leave (SL)"
  */
 export interface LeaveRecordDoc {
   id: string
   person: string
   /** YYYY-MM */
   month: string
+  /** annual | sick | leave | unpaid | other — UI maps annual/leave → AL, sick → SL */
   type: string
   dates: string[]
+  /** Half-day qualifier for single-date entries */
+  halfDay?: 'AM' | 'PM' | null
   note: string | null
   sourceJid: string | null
   sourceMessageId: string | null
@@ -105,6 +109,7 @@ export interface CreateLeavePayload {
   month: string
   type?: string
   dates: string[]
+  halfDay?: 'AM' | 'PM' | null
   note?: string
 }
 

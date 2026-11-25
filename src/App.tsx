@@ -69,6 +69,12 @@ export default function App() {
         )}
         {tab === 'leave' && (
           <LeavePanel
+            year={year}
+            month={month}
+            onMonthChange={(y, m) => {
+              setYear(y)
+              setMonth(m)
+            }}
             people={data.people}
             leave={data.leave}
             onSubmit={(p) => data.createLeave(p)}

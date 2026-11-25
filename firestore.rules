@@ -1,10 +1,38 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // P1027 Admin / sick-meal
-    // Cloud Function `api` writes with Admin SDK (bypasses these rules).
-    // Temporary demo: public READ so https://sick-meal.web.app works without Auth.
-    // Client writes remain denied. Tighten to request.auth != null once Auth is wired.
+    // P1027 Admin / sick-meal — Spark-friendly (no Cloud Functions required).
+    // TRADEOFF: Grok/feed bot writes via Firebase client SDK (unauthenticated)
+    // with a shared writeToken field. Anyone who knows the token can write.
+    // Token value is injected at deploy from internal/ingest-key.txt
+    // (placeholder REPLACE_WRITE_TOKEN must not ship as the real secret in git).
+    // Public READ for https://sick-meal.web.app without Auth.
+    // Tighten to Firebase Auth when ready.
+
+    function hasWriteToken() {
+      return request.resource.data.writeToken is string
+        && request.resource.data.writeToken == 'REPLACE_WRITE_TOKEN';
+    }
+
+    function isValidOrder() {
+      return request.resource.data.keys().hasAll(['person', 'date', 'dish', 'amount', 'onMenu', 'updatedAt', 'writeToken'])
+        && request.resource.data.person is string
+        && request.resource.data.date is string
+        && request.resource.data.dish is string;
+    }
+
+    function isValidLeave() {
+      return request.resource.data.keys().hasAll(['person', 'month', 'type', 'dates', 'updatedAt', 'writeToken'])
+        && request.resource.data.person is string
+        && request.resource.data.month is string
+        && request.resource.data.type is string
+        && request.resource.data.dates is list;
+    }
+
+    function isValidWeeklyReport() {
+      return request.resource.data.keys().hasAll(['weekId', 'weekStart', 'weekEnd', 'grandTotal', 'updatedAt', 'writeToken'])
+        && request.resource.data.weekId is string;
+    }
 
     match /people/{id} {
       allow read: if true;
@@ -18,17 +46,20 @@ service cloud.firestore {
 
     match /orders/{id} {
       allow read: if true;
-      allow write: if false;
+      allow create, update: if hasWriteToken() && isValidOrder();
+      allow delete: if false;
     }
 
     match /leaveRequests/{id} {
       allow read: if true;
-      allow write: if false;
+      allow create, update: if hasWriteToken() && isValidLeave();
+      allow delete: if false;
     }
 
     match /weeklyReports/{id} {
       allow read: if true;
-      allow write: if false;
+      allow create, update: if hasWriteToken() && isValidWeeklyReport();
+      allow delete: if false;
     }
 
     match /{document=**} {

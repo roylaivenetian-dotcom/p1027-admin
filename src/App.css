@@ -222,43 +222,110 @@ body {
   color: var(--muted);
 }
 
-/* Leave */
-.leave-panel {
-  background: var(--panel);
-  border: 2px solid var(--line);
-  padding: 1rem 1.25rem 1.5rem;
-}
-
-.leave-panel.leave-open {
+/* Leave summary (P1027 Admin Group AL / SL board) */
+.leave-board.leave-open .leave-summary-panel {
   border-color: #c2410c;
   box-shadow: 0 0 0 3px rgba(240, 160, 90, 0.35);
 }
 
-.leave-banner {
+.leave-summary-panel {
+  background: var(--panel);
+  border: 2px solid var(--line);
+  padding: 1rem 1.25rem 1.25rem;
+  max-width: 42rem;
+}
+
+.leave-summary-head {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
   margin-bottom: 1rem;
-  padding: 0.75rem 0.9rem;
-  background: #fff7ed;
-  border: 1px solid #fdba74;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #ccc;
 }
 
-.leave-layout {
-  display: grid;
-  grid-template-columns: minmax(260px, 360px) 1fr;
-  gap: 1.5rem;
+.leave-summary-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
 }
 
-.leave-form,
-.leave-list {
+.leave-window-tag {
+  font-size: 0.8rem;
+  color: #c2410c;
+  font-weight: 600;
+}
+
+.leave-section {
+  margin-bottom: 1.1rem;
+}
+
+.leave-section-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.leave-bullets {
+  list-style: disc;
+  margin: 0;
+  padding: 0 0 0 1.25rem;
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.leave-bullets li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.leave-remove {
+  border: none;
+  padding: 0 0.25rem;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.leave-empty {
+  margin: 0;
+  padding-left: 0.15rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.leave-add-bar {
+  margin-top: 0.75rem;
+}
+
+.leave-form {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
 }
 
-.leave-form label,
-.leave-dates label {
+.leave-form-compact {
+  margin-top: 0.75rem;
+  background: var(--panel);
+  border: 1px solid #94a3b8;
+  padding: 0.85rem 1rem;
+  max-width: 42rem;
+}
+
+.leave-form-compact h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.leave-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 0.75rem;
+}
+
+.leave-form label {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -270,17 +337,10 @@ body {
 .leave-form select,
 .leave-form textarea,
 .menu-add input,
-.menu-add select,
-.leave-list-head input {
+.menu-add select {
   font: inherit;
   padding: 0.4rem 0.5rem;
   border: 1px solid #94a3b8;
-}
-
-.leave-dates {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
 }
 
 .btn-primary {
@@ -307,39 +367,9 @@ body {
   font-weight: 400;
 }
 
-.leave-list-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.leave-list-head h2,
-.leave-form h2,
 .menu-admin h2 {
   margin: 0;
   font-size: 1.1rem;
-}
-
-.leave-list ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.leave-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.65rem 0;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.leave-meta {
-  font-size: 0.85rem;
-  color: var(--muted);
-  margin-top: 0.15rem;
 }
 
 /* Menu admin */
@@ -390,7 +420,7 @@ body {
 }
 
 @media (max-width: 720px) {
-  .leave-layout {
+  .leave-form-grid {
     grid-template-columns: 1fr;
   }
 

@@ -6,7 +6,7 @@ import { MOCK_FOOD_ORDERS, MOCK_LEAVE } from '../data/mockOrders'
 import { buildOrderDoc } from '../lib/pricing'
 import { todayIsoHkt } from '../lib/dates'
 
-const STORAGE_KEY = 'food-leave-app:v2'
+const STORAGE_KEY = 'food-leave-app:v3'
 
 interface AppState {
   people: Person[]
@@ -92,8 +92,9 @@ export function createLeave(payload: CreateLeavePayload): LeaveRecordDoc {
     id,
     person: payload.person,
     month: payload.month,
-    type: payload.type ?? 'leave',
+    type: payload.type ?? 'annual',
     dates: payload.dates,
+    halfDay: payload.halfDay ?? null,
     note: payload.note ?? null,
     sourceJid: null,
     sourceMessageId: null,
