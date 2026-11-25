@@ -1,37 +1,33 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Secure defaults for Firebase project sick-meal (P1027 Admin).
-    // Bot (whatsapp-food-feed) writes via Admin SDK / service account.
-    // Client web config is read-oriented; enable Auth then allow signed-in reads.
-
-    function isSignedIn() {
-      return request.auth != null;
-    }
+    // P1027 Admin / sick-meal
+    // Cloud Function `api` writes with Admin SDK (bypasses these rules).
+    // Temporary demo: public READ so https://sick-meal.web.app works without Auth.
+    // Client writes remain denied. Tighten to request.auth != null once Auth is wired.
 
     match /people/{id} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if false;
     }
 
     match /menuItems/{id} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if false;
     }
 
-    // Primary bot feed collections
     match /orders/{id} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if false;
     }
 
     match /leaveRequests/{id} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if false;
     }
 
     match /weeklyReports/{id} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if false;
     }
 
