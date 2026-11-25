@@ -92,8 +92,8 @@ export function MenuAdmin({
     try {
       const { dataUrl, bytes } = await compressMenuImage(file)
       setPreview(dataUrl)
-      setStatus(`OCR… (${Math.round(bytes / 1024)} KB)`)
-      const { dishes } = await ocrMenuImage(dataUrl, (msg) => setStatus(msg))
+      setStatus(`Reading menu… (${Math.round(bytes / 1024)} KB)`)
+      const { dishes, engine } = await ocrMenuImage(dataUrl, (msg) => setStatus(msg))
       setOcrDishes(
         dishes.length
           ? dishes
@@ -109,8 +109,8 @@ export function MenuAdmin({
       setStep('confirm')
       setStatus(
         dishes.length
-          ? `Review ${dishes.length} dish${dishes.length === 1 ? '' : 'es'} — confirm before save`
-          : 'OCR found no dishes — add rows manually, then confirm',
+          ? `Review ${dishes.length} dish${dishes.length === 1 ? '' : 'es'} (${engine}) — confirm before save`
+          : 'No dishes detected — add rows manually, then confirm',
       )
     } catch (err) {
       setPreview(null)
@@ -308,8 +308,9 @@ export function MenuAdmin({
         <div>
           <h2>Fixed menu · 固定菜單</h2>
           <p className="form-hint">
-            Paste or upload a menu <strong>photo</strong> → OCR extracts dishes → review / edit → confirm Save. Mid-week
-            uploads keep older menus for earlier days. Meals HK${MEAL_PRICE} · soup free · drinks +HK${DRINK_PRICE}.
+            Paste or upload a menu <strong>photo</strong> → vision reads dishes (Gemini) → review / edit → confirm Save.
+            Mid-week uploads keep older menus for earlier days. Meals HK${MEAL_PRICE} · soup free · drinks +HK$
+            {DRINK_PRICE}.
           </p>
         </div>
         {activeToday && (
@@ -364,7 +365,9 @@ export function MenuAdmin({
                   aria-label="Paste menu photo"
                 >
                   <strong>Paste menu photo here</strong>
-                  <span className="form-hint">Ctrl/Cmd+V · or choose a file below. OCR runs before save.</span>
+                  <span className="form-hint">
+                    Ctrl/Cmd+V · or choose a file below. Vision extracts dishes before save (you confirm).
+                  </span>
                 </div>
                 <label className="menu-file-label">
                   <span>Or upload file</span>

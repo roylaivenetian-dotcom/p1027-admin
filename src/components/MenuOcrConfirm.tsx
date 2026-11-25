@@ -51,7 +51,7 @@ export function MenuOcrConfirm({
         <div>
           <h3>Review dishes · 確認菜式</h3>
           <p className="form-hint">
-            OCR result from the menu photo. Edit names, add/remove rows, set dates, then confirm Save. Nothing is
+            Vision read of the menu photo. Edit names, add/remove rows, set dates, then confirm Save. Nothing is
             written until you confirm.
           </p>
         </div>

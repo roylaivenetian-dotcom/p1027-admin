@@ -1,25 +1,28 @@
-import { createWorker, type Worker } from 'tesseract.js'
-import type { MenuCategory } from '../types'
+import { createWorker, PSM, type Worker } from 'tesseract.js'
+import {
+  mergeDishDrafts,
+  parseDayCellText,
+  parseOcrDishLines,
+  type OcrDishDraft,
+} from './menuOcrParse'
+import { preprocessForOcr, splitWeeklyDayCells } from './menuOcrPreprocess'
+import { visionConfigured, visionExtractDishes } from './menuVisionOcr'
 
-export type OcrDishDraft = {
-  key: string
-  nameZh: string
-  nameEn: string
-  category: MenuCategory
-}
+export type { OcrDishDraft }
+export { parseOcrDishLines, parseDayCellText, mergeDishDrafts } from './menuOcrParse'
 
 let workerPromise: Promise<Worker> | null = null
 
 async function getWorker(): Promise<Worker> {
   if (!workerPromise) {
     workerPromise = (async () => {
-      // Traditional + Simplified Chinese + English for HK menus
-      const worker = await createWorker(['chi_tra', 'chi_sim', 'eng'], 1, {
+      const worker = await createWorker('chi_tra', 1, {
         logger: () => {
-          /* progress surfaced by caller via status string */
+          /* progress via onProgress */
         },
       })
       await worker.setParameters({
+        tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
         preserve_interword_spaces: '1',
       })
       return worker
@@ -28,101 +31,81 @@ async function getWorker(): Promise<Worker> {
   return workerPromise
 }
 
-const PRICE_RE = /\$?\s*\d{1,3}(?:\.\d{1,2})?/g
-const NOISE_RE =
-  /^(菜單|午餐|晚餐|本日|今日午餐|今日|星期|週|周|soup|drink|menu|set|meal|p1027|admin|免費|例湯|飲品|備註|note|free)/i
-
-function stripNoise(line: string): string {
-  return line
-    .replace(PRICE_RE, ' ')
-    .replace(/[|｜•·、,，.。:：;；()（）\[\]【】]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function hasCjk(s: string): boolean {
-  return /[\u3400-\u9fff]/.test(s)
-}
-
-function guessCategory(name: string): MenuCategory {
-  const n = name.toLowerCase()
-  if (/湯|soup/.test(n) && !/飯|麵|面|粉/.test(n)) return 'soup'
-  if (/茶|可樂|汽水|咖啡|汁|drink|檸/.test(n) && !/飯|麵|面/.test(n)) return 'drink'
-  return 'meal'
-}
-
-function splitEnZh(raw: string): { nameZh: string; nameEn: string } {
-  const cleaned = stripNoise(raw)
-  // "Tomato egg rice 番茄炒蛋飯" or "番茄炒蛋飯 Tomato"
-  const cjkParts = cleaned.match(/[\u3400-\u9fff][\u3400-\u9fff\s]*/g)
-  const nameZh = (cjkParts?.join('') ?? cleaned).replace(/\s+/g, '').trim()
-  let nameEn = cleaned
-    .replace(/[\u3400-\u9fff]+/g, ' ')
-    .replace(/[+\-–—]/g, ' ')
-    .replace(/\bP\d+\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (nameEn.length <= 1) nameEn = ''
-  return { nameZh: nameZh || cleaned, nameEn }
-}
-
-/** Parse OCR plain text into editable dish drafts. */
-export function parseOcrDishLines(text: string): OcrDishDraft[] {
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean)
-
-  const out: OcrDishDraft[] = []
-  const seen = new Set<string>()
-
-  for (const line of lines) {
-    const cleaned = stripNoise(line)
-    if (cleaned.length < 2) continue
-    if (NOISE_RE.test(cleaned)) continue
-    if (!hasCjk(cleaned) && cleaned.length < 4) continue
-    // Skip pure numbers / short junk
-    if (/^[\d\s.]+$/.test(cleaned)) continue
-
-    const { nameZh, nameEn } = splitEnZh(cleaned)
-    if (nameZh.length < 2) continue
-    const key = nameZh.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-
-    out.push({
-      key: `ocr-${out.length}-${Date.now()}`,
-      nameZh,
-      nameEn,
-      category: guessCategory(nameZh + nameEn),
-    })
-  }
-
-  return out
-}
-
 export type OcrProgress = (msg: string) => void
 
-/** Run Tesseract on a data URL / blob URL; return drafts (may be empty). */
-export async function ocrMenuImage(
-  image: string | HTMLImageElement | File | Blob,
+async function recognizeText(image: string, onProgress?: OcrProgress, label?: string): Promise<string> {
+  const worker = await getWorker()
+  if (label) onProgress?.(`OCR ${label}…`)
+  const result = await worker.recognize(image)
+  return result.data.text ?? ''
+}
+
+/** Tesseract fallback: preprocess → 2×3 day cells → parse. */
+async function tesseractExtractDishes(
+  image: string,
   onProgress?: OcrProgress,
 ): Promise<{ text: string; dishes: OcrDishDraft[] }> {
-  onProgress?.('Loading OCR (Chinese)…')
-  const worker = await getWorker()
-  onProgress?.('Reading menu photo…')
-  const result = await worker.recognize(image)
-  const text = result.data.text ?? ''
-  onProgress?.('Parsing dishes…')
-  const dishes = parseOcrDishLines(text)
-  return { text, dishes }
+  onProgress?.('Vision unavailable — Tesseract grid fallback…')
+  const canvas = await preprocessForOcr(image)
+  const cells = splitWeeklyDayCells(canvas)
+
+  onProgress?.(`Reading ${cells.length} day columns…`)
+  const texts: string[] = []
+  const groups: ReturnType<typeof parseDayCellText>[] = []
+
+  for (const cell of cells) {
+    const text = await recognizeText(cell.dataUrl, onProgress, cell.dayHint)
+    texts.push(`--- ${cell.dayHint} ---\n${text}`)
+    groups.push(parseDayCellText(text, cell.dayHint))
+  }
+
+  let dishes = mergeDishDrafts(groups)
+
+  if (dishes.length < 8) {
+    onProgress?.('Grid yielded few dishes — trying full page…')
+    const fullUrl = canvas.toDataURL('image/png')
+    const fullText = await recognizeText(fullUrl, onProgress, 'full page')
+    texts.push(`--- full ---\n${fullText}`)
+    const fullDishes = parseOcrDishLines(fullText)
+    if (fullDishes.length > dishes.length) dishes = fullDishes
+  }
+
+  onProgress?.(
+    dishes.length
+      ? `Found ${dishes.length} dishes — review before save`
+      : 'No dishes detected — add rows manually',
+  )
+
+  return { text: texts.join('\n\n'), dishes }
+}
+
+/**
+ * Extract dishes from a menu photo.
+ * Primary: Gemini vision (Firebase / VITE_GEMINI_API_KEY).
+ * Fallback: Tesseract chi_tra grid crops.
+ */
+export async function ocrMenuImage(
+  image: string,
+  onProgress?: OcrProgress,
+): Promise<{ text: string; dishes: OcrDishDraft[]; engine: 'vision' | 'tesseract' }> {
+  if (visionConfigured()) {
+    try {
+      const result = await visionExtractDishes(image, onProgress)
+      return { ...result, engine: 'vision' }
+    } catch (e) {
+      console.warn('Vision OCR failed, falling back to Tesseract', e)
+      onProgress?.(
+        `Vision failed (${e instanceof Error ? e.message.slice(0, 80) : 'error'}) — trying Tesseract…`,
+      )
+    }
+  }
+
+  const result = await tesseractExtractDishes(image, onProgress)
+  return { ...result, engine: 'tesseract' }
 }
 
 export function slugMenuItemId(nameZh: string): string {
-  const base = nameZh
-    .trim()
-    .replace(/\s+/g, '')
-    .slice(0, 40)
+  const base = nameZh.trim().replace(/\s+/g, '').slice(0, 40)
   return `cap_${base || 'item'}_${Math.abs(hash(nameZh))}`
 }
 
