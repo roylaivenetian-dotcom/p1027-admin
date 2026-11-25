@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   orderBy,
@@ -68,6 +69,31 @@ export async function createMenuVisionJob(
   return { id, ...data }
 }
 
+function mapMenuVisionJob(id: string, d: Omit<MenuVisionJobDoc, 'id'>): MenuVisionJobDoc {
+  return {
+    id,
+    status: d.status as MenuVisionJobStatus,
+    imageDataUrl: d.imageDataUrl ?? null,
+    contentType: d.contentType ?? null,
+    byteLength: d.byteLength ?? null,
+    dishes: (d.dishes as MenuVisionDish[] | null) ?? null,
+    error: d.error ?? null,
+    engine: d.engine ?? null,
+    source: d.source ?? 'menu-admin',
+    notifyJid: d.notifyJid ?? null,
+    updatedAt: d.updatedAt,
+    writeToken: d.writeToken,
+  }
+}
+
+export async function fetchMenuVisionJob(jobId: string): Promise<MenuVisionJobDoc | null> {
+  const db = getDb()
+  if (!db) return null
+  const snap = await getDoc(doc(db, COLLECTIONS.menuVisionJobs, jobId))
+  if (!snap.exists()) return null
+  return mapMenuVisionJob(snap.id, snap.data() as Omit<MenuVisionJobDoc, 'id'>)
+}
+
 export function subscribeMenuVisionJob(
   jobId: string,
   onChange: (job: MenuVisionJobDoc | null) => void,
@@ -82,21 +108,7 @@ export function subscribeMenuVisionJob(
       onChange(null)
       return
     }
-    const d = snap.data() as Omit<MenuVisionJobDoc, 'id'>
-    onChange({
-      id: snap.id,
-      status: d.status as MenuVisionJobStatus,
-      imageDataUrl: d.imageDataUrl ?? null,
-      contentType: d.contentType ?? null,
-      byteLength: d.byteLength ?? null,
-      dishes: (d.dishes as MenuVisionDish[] | null) ?? null,
-      error: d.error ?? null,
-      engine: d.engine ?? null,
-      source: d.source ?? 'menu-admin',
-      notifyJid: d.notifyJid ?? null,
-      updatedAt: d.updatedAt,
-      writeToken: d.writeToken,
-    })
+    onChange(mapMenuVisionJob(snap.id, snap.data() as Omit<MenuVisionJobDoc, 'id'>))
   })
 }
 
