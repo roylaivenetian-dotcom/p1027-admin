@@ -2,16 +2,20 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // P1027 Admin / sick-meal — Spark-friendly (no Cloud Functions required).
-    // TRADEOFF: Grok/feed bot writes via Firebase client SDK (unauthenticated)
+    // TRADEOFF: Grok/feed bot + Menu admin write via Firebase client SDK
     // with a shared writeToken field. Anyone who knows the token can write.
     // Token value is injected at deploy from internal/ingest-key.txt
     // (placeholder REPLACE_WRITE_TOKEN must not ship as the real secret in git).
     // Public READ for https://sick-meal.web.app without Auth.
-    // Tighten to Firebase Auth when ready.
 
     function hasWriteToken() {
       return request.resource.data.writeToken is string
         && request.resource.data.writeToken == 'REPLACE_WRITE_TOKEN';
+    }
+
+    function existingHasWriteToken() {
+      return resource.data.writeToken is string
+        && resource.data.writeToken == 'REPLACE_WRITE_TOKEN';
     }
 
     function isValidOrder() {
@@ -34,14 +38,41 @@ service cloud.firestore {
         && request.resource.data.weekId is string;
     }
 
+    function isValidMenuItem() {
+      return request.resource.data.keys().hasAll(['nameZh', 'category', 'priceHkd', 'active', 'updatedAt', 'writeToken'])
+        && request.resource.data.nameZh is string
+        && request.resource.data.category is string
+        && request.resource.data.priceHkd is number;
+    }
+
+    function isValidMenuPhoto() {
+      return request.resource.data.keys().hasAll(['effectiveFrom', 'updatedAt', 'writeToken'])
+        && request.resource.data.effectiveFrom is string
+        && request.resource.data.effectiveFrom.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && (
+          request.resource.data.effectiveTo == null
+          || (request.resource.data.effectiveTo is string
+              && request.resource.data.effectiveTo.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))
+        );
+    }
+
     match /people/{id} {
       allow read: if true;
       allow write: if false;
     }
 
+    // Optional text captions / aliases (secondary to menuPhotos)
     match /menuItems/{id} {
       allow read: if true;
-      allow write: if false;
+      allow create, update: if hasWriteToken() && isValidMenuItem();
+      allow delete: if existingHasWriteToken();
+    }
+
+    // Dated menu photos — primary fixed menu for Grok OCR matching
+    match /menuPhotos/{id} {
+      allow read: if true;
+      allow create, update: if hasWriteToken() && isValidMenuPhoto();
+      allow delete: if existingHasWriteToken();
     }
 
     match /orders/{id} {

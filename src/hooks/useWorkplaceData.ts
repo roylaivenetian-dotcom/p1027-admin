@@ -4,6 +4,7 @@ import type {
   FoodOrderDoc,
   LeaveRecordDoc,
   MenuItem,
+  MenuPhotoDoc,
   Person,
   UpsertOrderPayload,
 } from '../types'
@@ -20,11 +21,18 @@ import {
   resetMockData,
 } from '../services/store'
 import {
+  closeOpenEndedMenuPhotosBefore,
+  deleteMenuItemDoc,
+  deleteMenuPhotoDoc,
   fetchLeaveForMonth,
   fetchMenu,
+  fetchMenuPhotos,
   fetchPeople,
+  saveMenuItemDoc,
+  saveMenuPhotoDoc,
   subscribeFoodOrdersMonth,
   tryGetDb,
+  type SaveMenuPhotoInput,
 } from '../services/firestoreData'
 import { firebaseConfigured, firebaseConfigSummary } from '../lib/firebase'
 import { comingMonthKey, monthKey } from '../lib/dates'
@@ -34,6 +42,7 @@ export type DataSource = 'firestore' | 'mock'
 export function useWorkplaceData(year: number, month: number) {
   const [people, setPeople] = useState<Person[]>(SEED_PEOPLE)
   const [menu, setMenu] = useState<MenuItem[]>(SEED_MENU)
+  const [menuPhotos, setMenuPhotos] = useState<MenuPhotoDoc[]>([])
   const [orders, setOrders] = useState<FoodOrderDoc[]>(MOCK_FOOD_ORDERS)
   const [leave, setLeave] = useState<LeaveRecordDoc[]>(MOCK_LEAVE)
   const [source, setSource] = useState<DataSource>('mock')
@@ -93,13 +102,18 @@ export function useWorkplaceData(year: number, month: number) {
       try {
         // Prefer orders presence; people/menu may be seeded later by the bot
         const probe = await withTimeout(
-          Promise.all([fetchPeople(db), fetchMenu(db)]),
+          Promise.all([fetchPeople(db), fetchMenu(db), fetchMenuPhotos(db)]),
           12000,
         )
         if (cancelled) return
-        const [p, m] = probe
+        const [p, m, photos] = probe
         if (p.length) setPeople(p)
         if (m.length) setMenu(m)
+        setMenuPhotos(photos)
+        if (photos.length) {
+          setSource('firestore')
+          setStatus(`Live Firestore · ${firebaseConfigSummary()}`)
+        }
 
         let gotLiveOrders = false
         let gotLiveLeave = false
@@ -187,9 +201,48 @@ export function useWorkplaceData(year: number, month: number) {
   const cancelLeave = useCallback((id: string) => localCancelLeave(id), [])
   const saveMenu = useCallback((next: MenuItem[]) => localSaveMenu(next), [])
 
+  const refreshMenuData = useCallback(async () => {
+    const db = tryGetDb()
+    if (!db) return
+    const [m, photos] = await Promise.all([fetchMenu(db), fetchMenuPhotos(db)])
+    setMenu(m.length ? m : SEED_MENU)
+    setMenuPhotos(photos)
+  }, [])
+
+  const savePhoto = useCallback(async (input: SaveMenuPhotoInput) => {
+    const db = tryGetDb()
+    if (!db) throw new Error('Firestore not configured')
+    await saveMenuPhotoDoc(db, input)
+  }, [])
+
+  const closeOpenEndedBefore = useCallback(async (newStart: string) => {
+    const db = tryGetDb()
+    if (!db) throw new Error('Firestore not configured')
+    await closeOpenEndedMenuPhotosBefore(db, newStart)
+  }, [])
+
+  const deletePhoto = useCallback(async (id: string) => {
+    const db = tryGetDb()
+    if (!db) throw new Error('Firestore not configured')
+    await deleteMenuPhotoDoc(db, id)
+  }, [])
+
+  const saveItem = useCallback(async (item: MenuItem) => {
+    const db = tryGetDb()
+    if (!db) throw new Error('Firestore not configured')
+    await saveMenuItemDoc(db, item)
+  }, [])
+
+  const deleteItem = useCallback(async (id: string) => {
+    const db = tryGetDb()
+    if (!db) throw new Error('Firestore not configured')
+    await deleteMenuItemDoc(db, id)
+  }, [])
+
   return {
     people,
     menu,
+    menuPhotos,
     orders,
     leave,
     source,
@@ -199,6 +252,12 @@ export function useWorkplaceData(year: number, month: number) {
     createLeave,
     cancelLeave,
     saveMenu,
+    refreshMenuData,
+    savePhoto,
+    closeOpenEndedBefore,
+    deletePhoto,
+    saveItem,
+    deleteItem,
     resetMockData,
   }
 }

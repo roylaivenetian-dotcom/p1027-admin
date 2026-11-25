@@ -81,7 +81,18 @@ export default function App() {
             onCancel={data.cancelLeave}
           />
         )}
-        {tab === 'menu' && <MenuAdmin menu={data.menu} onSave={data.saveMenu} />}
+        {tab === 'menu' && (
+          <MenuAdmin
+            menu={data.menu}
+            photos={data.menuPhotos}
+            onRefresh={data.refreshMenuData}
+            onSavePhoto={data.savePhoto}
+            onCloseOpenEndedBefore={data.closeOpenEndedBefore}
+            onDeletePhoto={data.deletePhoto}
+            onSaveItem={data.saveItem}
+            onDeleteItem={data.deleteItem}
+          />
+        )}
       </main>
     </div>
   )

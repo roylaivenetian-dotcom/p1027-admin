@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDocs,
   onSnapshot,
@@ -10,14 +11,25 @@ import {
   type Firestore,
   type Unsubscribe,
 } from 'firebase/firestore'
-import type { CreateLeavePayload, FoodOrderDoc, LeaveRecordDoc, MenuItem, Person, UpsertOrderPayload } from '../types'
+import type {
+  CreateLeavePayload,
+  FoodOrderDoc,
+  LeaveRecordDoc,
+  MenuItem,
+  MenuPhotoDoc,
+  Person,
+  UpsertOrderPayload,
+} from '../types'
 import { buildOrderDoc } from '../lib/pricing'
 import { getDb, firebaseConfigured } from '../lib/firebase'
+import { requireWriteToken } from '../lib/writeToken'
+import { dayBeforeIso } from '../lib/menuDates'
 
 /** Collection names — must match shared Bot feed contract. */
 export const COLLECTIONS = {
   people: 'people',
   menuItems: 'menuItems',
+  menuPhotos: 'menuPhotos',
   orders: 'orders',
   leaveRequests: 'leaveRequests',
   weeklyReports: 'weeklyReports',
@@ -40,6 +52,103 @@ export async function fetchPeople(db: Firestore): Promise<Person[]> {
 export async function fetchMenu(db: Firestore): Promise<MenuItem[]> {
   const snap = await getDocs(collection(db, COLLECTIONS.menuItems))
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<MenuItem, 'id'>) }))
+}
+
+export async function fetchMenuPhotos(db: Firestore): Promise<MenuPhotoDoc[]> {
+  const q = query(collection(db, COLLECTIONS.menuPhotos), orderBy('effectiveFrom', 'desc'))
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<MenuPhotoDoc, 'id'>) }))
+}
+
+export type SaveMenuPhotoInput = {
+  id?: string
+  effectiveFrom: string
+  effectiveTo: string | null
+  imageDataUrl: string
+  note?: string | null
+}
+
+export async function saveMenuPhotoDoc(db: Firestore, input: SaveMenuPhotoInput): Promise<MenuPhotoDoc> {
+  const writeToken = requireWriteToken()
+  const id = input.id ?? `menu_${input.effectiveFrom}_${Date.now()}`
+  const record: MenuPhotoDoc = {
+    id,
+    effectiveFrom: input.effectiveFrom,
+    effectiveTo: input.effectiveTo,
+    imageDataUrl: input.imageDataUrl,
+    imageUrl: null,
+    contentType: 'image/jpeg',
+    byteLength: Math.round((input.imageDataUrl.length * 3) / 4),
+    note: input.note?.trim() || null,
+    updatedAt: new Date().toISOString(),
+    writeToken,
+  }
+  const { id: _id, ...data } = record
+  await setDoc(doc(db, COLLECTIONS.menuPhotos, id), data, { merge: true })
+  return record
+}
+
+export async function deleteMenuPhotoDoc(db: Firestore, id: string): Promise<void> {
+  await deleteDoc(doc(db, COLLECTIONS.menuPhotos, id))
+}
+
+/**
+ * When a new menu starts on `newStart`, set effectiveTo on open-ended earlier
+ * photos to the day before — keeps those docs for historical matching.
+ */
+export async function closeOpenEndedMenuPhotosBefore(db: Firestore, newStart: string): Promise<number> {
+  const until = dayBeforeIso(newStart)
+  const photos = await fetchMenuPhotos(db)
+  const writeToken = requireWriteToken()
+  let n = 0
+  for (const p of photos) {
+    if (p.effectiveTo != null) continue
+    if (p.effectiveFrom >= newStart) continue
+    if (until < p.effectiveFrom) continue
+    await setDoc(
+      doc(db, COLLECTIONS.menuPhotos, p.id),
+      {
+        effectiveTo: until,
+        updatedAt: new Date().toISOString(),
+        writeToken,
+      },
+      { merge: true },
+    )
+    n++
+  }
+  return n
+}
+
+export async function saveMenuItemDoc(db: Firestore, item: MenuItem): Promise<MenuItem> {
+  const writeToken = requireWriteToken()
+  const id = item.id || `item_${Date.now()}`
+  const nameEn = item.nameEn
+  const payload = {
+    nameZh: item.nameZh,
+    nameEn: nameEn ?? null,
+    category: item.category,
+    priceHkd: item.priceHkd,
+    aliases: item.aliases ?? [],
+    active: item.active,
+    updatedAt: new Date().toISOString(),
+    writeToken,
+  }
+  await setDoc(doc(db, COLLECTIONS.menuItems, id), payload, { merge: true })
+  return {
+    id,
+    nameZh: item.nameZh,
+    nameEn,
+    category: item.category,
+    priceHkd: item.priceHkd,
+    aliases: payload.aliases,
+    active: item.active,
+    updatedAt: payload.updatedAt,
+    writeToken,
+  }
+}
+
+export async function deleteMenuItemDoc(db: Firestore, id: string): Promise<void> {
+  await deleteDoc(doc(db, COLLECTIONS.menuItems, id))
 }
 
 export function subscribeFoodOrdersMonth(

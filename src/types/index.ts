@@ -19,6 +19,31 @@ export interface MenuItem {
   priceHkd: number
   aliases?: string[]
   active: boolean
+  /** Present on Spark client writes */
+  writeToken?: string
+  updatedAt?: string
+}
+
+/**
+ * Firestore `menuPhotos/{id}` — dated menu photos (primary fixed menu).
+ * Spark stores JPEG as `imageDataUrl`; Blaze may also set HTTPS `imageUrl`.
+ * Grok: pick the photo whose [effectiveFrom, effectiveTo] covers the order date.
+ */
+export interface MenuPhotoDoc {
+  id: string
+  /** Inclusive start date YYYY-MM-DD (HKT) when this menu becomes active */
+  effectiveFrom: string
+  /** Inclusive end date YYYY-MM-DD, or null = open-ended */
+  effectiveTo: string | null
+  /** JPEG data URL (Spark-compatible; primary image for Grok) */
+  imageDataUrl: string | null
+  /** HTTPS URL when Cloud Storage is available */
+  imageUrl: string | null
+  contentType: string | null
+  byteLength: number | null
+  note: string | null
+  updatedAt: string
+  writeToken?: string
 }
 
 /**
