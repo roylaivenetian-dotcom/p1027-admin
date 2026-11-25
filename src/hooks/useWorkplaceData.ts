@@ -102,6 +102,16 @@ export function useWorkplaceData(year: number, month: number) {
         if (m.length) setMenu(m)
 
         let gotLiveOrders = false
+        let gotLiveLeave = false
+
+        const markLive = (kind: 'orders' | 'leave') => {
+          setSource('firestore')
+          setStatus(`Live Firestore · ${firebaseConfigSummary()}`)
+          setError(null)
+          if (kind === 'orders') gotLiveOrders = true
+          if (kind === 'leave') gotLiveLeave = true
+        }
+
         unsubOrders = subscribeFoodOrdersMonth(
           db,
           year,
@@ -109,17 +119,18 @@ export function useWorkplaceData(year: number, month: number) {
           (remoteOrders) => {
             if (cancelled) return
             if (remoteOrders.length > 0) {
-              gotLiveOrders = true
               setOrders(remoteOrders)
-              setSource('firestore')
-              setStatus(`Live Firestore · ${firebaseConfigSummary()}`)
-              setError(null)
+              markLive('orders')
             } else if (!gotLiveOrders) {
-              // Empty month — keep mock for UX until bot writes
+              // Empty month — keep mock orders until bot/feed writes; leave may still go live
               const s = getState()
               setOrders(s.orders)
-              setSource('mock')
-              setStatus(`Firestore empty month · mock preview (${firebaseConfigSummary()})`)
+              if (!gotLiveLeave) {
+                setSource('mock')
+                setStatus(`Firestore empty month · mock preview (${firebaseConfigSummary()})`)
+              } else {
+                setStatus(`Live Firestore (leave) · orders empty · ${firebaseConfigSummary()}`)
+              }
             }
           },
           (err) => {
@@ -140,6 +151,7 @@ export function useWorkplaceData(year: number, month: number) {
             if (merged.length) {
               const byId = new Map(merged.map((l) => [l.id, l]))
               setLeave([...byId.values()])
+              markLive('leave')
             }
           }
         } catch {

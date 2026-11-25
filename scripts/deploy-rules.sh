@@ -31,6 +31,8 @@ fi
 
 cp "$ROOT/firestore.rules" "$ROOT/firestore.rules.bak"
 cp "$TMP" "$ROOT/firestore.rules"
+# Force upload even when only the injected secret changed vs a prior identical release
+echo "// deploy-stamp $(date -u +%Y%m%dT%H%M%SZ)" >> "$ROOT/firestore.rules"
 cleanup_rules() {
   mv "$ROOT/firestore.rules.bak" "$ROOT/firestore.rules"
 }
