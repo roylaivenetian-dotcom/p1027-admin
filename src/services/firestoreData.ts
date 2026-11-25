@@ -17,6 +17,9 @@ import type {
   LeaveRecordDoc,
   MenuItem,
   MenuPhotoDoc,
+  MenuVisionDish,
+  MenuVisionJobDoc,
+  MenuVisionJobStatus,
   Person,
   UpsertOrderPayload,
 } from '../types'
@@ -30,10 +33,72 @@ export const COLLECTIONS = {
   people: 'people',
   menuItems: 'menuItems',
   menuPhotos: 'menuPhotos',
+  menuVisionJobs: 'menuVisionJobs',
   orders: 'orders',
   leaveRequests: 'leaveRequests',
   weeklyReports: 'weeklyReports',
 } as const
+
+/** Locked food chat — same as whatsapp-food-feed FOOD_CHAT */
+export const FOOD_CHAT_JID = '85297868213-1620171799@g.us'
+
+export async function createMenuVisionJob(
+  imageDataUrl: string,
+  opts?: { contentType?: string },
+): Promise<MenuVisionJobDoc> {
+  const db = getDb()
+  if (!db) throw new Error('Firebase not configured')
+  const writeToken = requireWriteToken()
+  const id = `mvj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  const now = new Date().toISOString()
+  const data: Omit<MenuVisionJobDoc, 'id'> = {
+    status: 'pending',
+    imageDataUrl,
+    contentType: opts?.contentType ?? 'image/jpeg',
+    byteLength: Math.round((imageDataUrl.length * 3) / 4),
+    dishes: null,
+    error: null,
+    engine: null,
+    source: 'menu-admin',
+    notifyJid: FOOD_CHAT_JID,
+    updatedAt: now,
+    writeToken,
+  }
+  await setDoc(doc(db, COLLECTIONS.menuVisionJobs, id), data)
+  return { id, ...data }
+}
+
+export function subscribeMenuVisionJob(
+  jobId: string,
+  onChange: (job: MenuVisionJobDoc | null) => void,
+): Unsubscribe {
+  const db = getDb()
+  if (!db) {
+    onChange(null)
+    return () => undefined
+  }
+  return onSnapshot(doc(db, COLLECTIONS.menuVisionJobs, jobId), (snap) => {
+    if (!snap.exists()) {
+      onChange(null)
+      return
+    }
+    const d = snap.data() as Omit<MenuVisionJobDoc, 'id'>
+    onChange({
+      id: snap.id,
+      status: d.status as MenuVisionJobStatus,
+      imageDataUrl: d.imageDataUrl ?? null,
+      contentType: d.contentType ?? null,
+      byteLength: d.byteLength ?? null,
+      dishes: (d.dishes as MenuVisionDish[] | null) ?? null,
+      error: d.error ?? null,
+      engine: d.engine ?? null,
+      source: d.source ?? 'menu-admin',
+      notifyJid: d.notifyJid ?? null,
+      updatedAt: d.updatedAt,
+      writeToken: d.writeToken,
+    })
+  })
+}
 
 export async function fetchPeople(db: Firestore): Promise<Person[]> {
   const snap = await getDocs(collection(db, COLLECTIONS.people))

@@ -24,6 +24,32 @@ export interface MenuItem {
   updatedAt?: string
 }
 
+/** Firestore `menuVisionJobs/{id}` — Menu admin ↔ P1027 Admin Grok bot OCR bridge */
+export type MenuVisionJobStatus = 'pending' | 'running' | 'done' | 'error'
+
+export interface MenuVisionDish {
+  nameZh: string
+  nameEn?: string
+  category?: MenuCategory
+}
+
+export interface MenuVisionJobDoc {
+  id: string
+  status: MenuVisionJobStatus
+  /** JPEG data URL for Grok vision (Spark) */
+  imageDataUrl: string | null
+  contentType: string | null
+  byteLength: number | null
+  dishes: MenuVisionDish[] | null
+  error: string | null
+  engine: 'grok' | null
+  source: 'menu-admin' | string
+  /** WhatsApp group the bot watches / may nudge */
+  notifyJid: string | null
+  updatedAt: string
+  writeToken?: string
+}
+
 /**
  * Firestore `menuPhotos/{id}` — dated menu photos (primary fixed menu).
  * Spark stores JPEG as `imageDataUrl`; Blaze may also set HTTPS `imageUrl`.

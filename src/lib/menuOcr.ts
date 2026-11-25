@@ -7,26 +7,25 @@ export { parseOcrDishLines, parseDayCellText, mergeDishDrafts } from './menuOcrP
 export type OcrProgress = (msg: string) => void
 
 /**
- * Extract dishes from a menu photo via Gemini vision only.
- * Does **not** fall back to Tesseract (garbage on Chinese weekly grids).
- * Status engine label is always `gemini` on success.
+ * Extract dishes via the P1027 Admin WhatsApp Grok bot (Firestore menuVisionJobs).
+ * No Gemini. No Tesseract fallback. Status engine label is `grok` on success.
  */
 export async function ocrMenuImage(
   image: string,
   onProgress?: OcrProgress,
-): Promise<{ text: string; dishes: OcrDishDraft[]; engine: 'gemini' }> {
+): Promise<{ text: string; dishes: OcrDishDraft[]; engine: 'grok' }> {
   if (!visionConfigured()) {
     throw new Error(
-      'Gemini vision is not configured (missing VITE_FIREBASE_API_KEY / VITE_GEMINI_API_KEY). Fix env and redeploy — Tesseract fallback is disabled for Chinese weekly menus.',
+      'Grok bot vision is not configured (missing VITE_FIREBASE_WRITE_TOKEN). Fix env and redeploy — Tesseract fallback is disabled.',
     )
   }
 
   try {
     const result = await visionExtractDishes(image, onProgress)
-    return { ...result, engine: 'gemini' }
+    return { ...result, engine: 'grok' }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    throw new Error(`Gemini vision failed: ${msg}`)
+    throw new Error(`Grok vision failed: ${msg}`)
   }
 }
 

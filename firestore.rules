@@ -75,6 +75,19 @@ service cloud.firestore {
       allow delete: if existingHasWriteToken();
     }
 
+    // Menu OCR jobs — Menu admin queues image; P1027 Admin Grok bot fills dishes
+    function isValidMenuVisionJob() {
+      return request.resource.data.keys().hasAll(['status', 'updatedAt', 'writeToken'])
+        && request.resource.data.status is string
+        && request.resource.data.updatedAt is string;
+    }
+
+    match /menuVisionJobs/{id} {
+      allow read: if true;
+      allow create, update: if hasWriteToken() && isValidMenuVisionJob();
+      allow delete: if existingHasWriteToken();
+    }
+
     match /orders/{id} {
       allow read: if true;
       allow create, update: if hasWriteToken() && isValidOrder();
