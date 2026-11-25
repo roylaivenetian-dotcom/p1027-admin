@@ -46,6 +46,13 @@ export function collapseDateRanges(dates: string[]): { start: string; end: strin
   return ranges
 }
 
+function normalizeHalfDay(halfDay: unknown): 'AM' | 'PM' | null {
+  if (halfDay === 'AM' || halfDay === 'PM') return halfDay
+  // Bot/feed sometimes sends boolean; treat true as PM (common WhatsApp shorthand)
+  if (halfDay === true) return 'PM'
+  return null
+}
+
 function formatRangeLabel(start: string, end: string, halfDay?: 'AM' | 'PM' | null): string {
   const m = monthAbbr(start)
   if (start === end) {
@@ -67,7 +74,7 @@ function formatRangeLabel(start: string, end: string, halfDay?: 'AM' | 'PM' | nu
  */
 export function formatLeaveBullet(record: LeaveRecordDoc): string {
   const ranges = collapseDateRanges(record.dates)
-  const half = record.dates.length <= 1 ? record.halfDay : null
+  const half = record.dates.length <= 1 ? normalizeHalfDay(record.halfDay) : null
   const datePart =
     ranges.length === 0
       ? '—'
