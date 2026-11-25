@@ -1,4 +1,4 @@
-import type { FoodOrder, MenuItem, OrderAddon, OrderLineStatus, UpsertOrderPayload } from '../types'
+import type { FoodOrderView, MenuItem, UpsertOrderPayload } from '../types'
 
 export const MEAL_PRICE = 50
 export const SOUP_PRICE = 0
@@ -19,116 +19,107 @@ export function findMenuItem(menu: MenuItem[], nameZh: string): MenuItem | undef
   )
 }
 
-/**
- * Price an order from fixed menu rules:
- * - meal on menu → HK$50
- * - soup → free
- * - drink → +HK$5
- * - anything not on menu → remark only, do not add to person total (未計價)
- */
-export function priceOrder(
-  payload: UpsertOrderPayload,
+/** Price per Bot feed rules → amount 50 / 55 / 0 */
+export function priceFromParts(
+  dish: string,
+  soup: boolean,
+  drink: string | null | undefined,
   menu: MenuItem[],
-): Pick<FoodOrder, 'mealOnMenu' | 'addons' | 'amountHkd' | 'status' | 'remark'> {
-  if (payload.forceStatus === 'unpriced') {
-    return {
-      mealOnMenu: false,
-      addons: payload.addons ?? [],
-      amountHkd: 0,
-      status: 'unpriced',
-      remark: payload.remark ?? '未計價',
-    }
-  }
-
-  if (payload.forceAmountHkd != null && payload.forceStatus) {
-    return {
-      mealOnMenu: payload.mealOnMenu ?? true,
-      addons: payload.addons ?? [],
-      amountHkd: payload.forceAmountHkd,
-      status: payload.forceStatus,
-      remark: payload.remark,
-    }
-  }
-
-  const mealMatch =
-    payload.mealOnMenu === false ? undefined : findMenuItem(menu, payload.mealNameZh)
-  const mealOnMenu = payload.mealOnMenu ?? Boolean(mealMatch)
-
-  const addons: OrderAddon[] = (payload.addons ?? []).map((a) => {
-    if (a.kind === 'soup') {
-      return { ...a, priceHkd: SOUP_PRICE, onMenu: a.onMenu ?? true }
-    }
-    if (a.kind === 'drink') {
-      const drinkMatch = findMenuItem(menu, a.nameZh)
-      const onMenu = a.onMenu ?? Boolean(drinkMatch)
-      return {
-        ...a,
-        onMenu,
-        priceHkd: onMenu ? (drinkMatch?.priceHkd ?? DRINK_PRICE) : 0,
-      }
-    }
-    const otherMatch = findMenuItem(menu, a.nameZh)
-    return {
-      ...a,
-      onMenu: a.onMenu ?? Boolean(otherMatch),
-      priceHkd: otherMatch?.priceHkd ?? 0,
-    }
-  })
-
-  const offMenuAddon = addons.some((a) => !a.onMenu && a.kind !== 'soup')
-  if (!mealOnMenu || offMenuAddon) {
-    const bits = [payload.remark, !mealOnMenu || offMenuAddon ? '未計價' : undefined].filter(Boolean)
-    return {
-      mealOnMenu,
-      addons,
-      amountHkd: 0,
-      status: 'unpriced',
-      remark: bits.join(' · ') || '未計價',
-    }
-  }
-
+  onMenuOverride?: boolean,
+): { onMenu: boolean; amount: number } {
+  const mealMatch = findMenuItem(menu, dish)
+  const onMenu = onMenuOverride ?? Boolean(mealMatch)
+  if (!onMenu) return { onMenu: false, amount: 0 }
   let amount = mealMatch?.priceHkd ?? MEAL_PRICE
-  for (const a of addons) {
-    if (a.onMenu) amount += a.priceHkd
+  if (drink) {
+    const drinkMatch = findMenuItem(menu, drink)
+    amount += drinkMatch?.priceHkd ?? DRINK_PRICE
   }
+  void soup // free
+  return { onMenu: true, amount }
+}
 
-  const provisional = Boolean(payload.remark?.includes('暫') || payload.forceStatus === 'provisional')
-  const status: OrderLineStatus = provisional ? 'provisional' : 'priced'
-
+export function toOrderView(
+  doc: {
+    id: string
+    person: string
+    date: string
+    dish: string
+    soup: boolean
+    drink: string | null
+    extras?: string[]
+    onMenu: boolean
+    amount: number
+    remark: string | null
+  },
+): FoodOrderView {
+  const provisional = Boolean(doc.remark?.includes('暫'))
+  const status = !doc.onMenu || doc.amount === 0 ? 'unpriced' : provisional ? 'provisional' : 'priced'
   return {
-    mealOnMenu: true,
-    addons,
-    amountHkd: amount,
+    id: doc.id,
+    personName: doc.person,
+    date: doc.date,
+    dish: doc.dish,
+    soup: doc.soup,
+    drink: doc.drink,
+    extras: doc.extras ?? [],
+    onMenu: doc.onMenu,
+    amount: doc.amount,
+    remark: doc.remark,
     status,
-    remark: payload.remark,
   }
 }
 
-export function formatOrderLine(order: FoodOrder): string {
+export function buildOrderDoc(payload: UpsertOrderPayload, menu: MenuItem[]): import('../types').FoodOrderDoc {
+  const soup = payload.soup ?? false
+  const drink = payload.drink ?? null
+  const priced =
+    payload.amount != null && payload.onMenu != null
+      ? { onMenu: payload.onMenu, amount: payload.amount }
+      : priceFromParts(payload.dish, soup, drink, menu, payload.onMenu)
+  const id = payload.sourceMessageId
+    ? `${payload.person}_${payload.date}_${payload.sourceMessageId}`
+    : `${payload.person}_${payload.date}`
+  const now = new Date().toISOString()
+  return {
+    id,
+    person: payload.person,
+    date: payload.date,
+    dish: payload.dish,
+    soup,
+    drink,
+    extras: payload.extras ?? [],
+    onMenu: priced.onMenu,
+    amount: priced.onMenu ? priced.amount : 0,
+    remark: payload.remark ?? (priced.onMenu ? null : '未計價'),
+    sourceJid: payload.sourceJid ?? null,
+    sourceMessageId: payload.sourceMessageId ?? null,
+    updatedAt: now,
+  }
+}
+
+export function formatOrderLine(order: FoodOrderView): string {
   const d = order.date.slice(8, 10) + '/' + order.date.slice(5, 7)
-  const addonPart = order.addons
-    .map((a) => `+ ${a.nameZh}`)
-    .join(', ')
-  const dish = addonPart ? `${order.mealNameZh} ${addonPart}` : order.mealNameZh
-  if (order.status === 'unpriced') {
-    const remark = order.remark ? `, ${order.remark}` : ', 未計價'
-    return `${d} ${dish}${remark.includes('未計價') ? remark : `${remark}, 未計價`}`
+  const parts = [order.dish]
+  if (order.soup) parts.push('+ 湯')
+  if (order.drink) parts.push(`+ ${order.drink}`)
+  if (order.extras.length) parts.push(order.extras.join(', '))
+  const dish = parts.join(' ')
+  if (order.status === 'unpriced' || !order.onMenu) {
+    const remark = order.remark && order.remark.includes('未計價') ? order.remark : [order.remark, '未計價'].filter(Boolean).join(', ')
+    return `${d} ${dish}${remark ? `, ${remark}` : ', 未計價'}`
   }
   const suffix = order.remark ? ` (${order.remark})` : ''
-  return `${d} ${dish} - $${order.amountHkd}${suffix}`
+  return `${d} ${dish} - $${order.amount}${suffix}`
 }
 
-export function sumPersonWeek(orders: FoodOrder[]): { total: number; provisional: boolean; hasUnpriced: boolean } {
+export function sumPersonWeek(orders: FoodOrderView[]): { total: number; provisional: boolean } {
   let total = 0
   let provisional = false
-  let hasUnpriced = false
   for (const o of orders) {
-    if (o.status === 'unpriced') {
-      hasUnpriced = true
-      continue
-    }
-    total += o.amountHkd
+    if (!o.onMenu || o.status === 'unpriced') continue
+    total += o.amount
     if (o.status === 'provisional') provisional = true
   }
-  return { total, provisional, hasUnpriced }
+  return { total, provisional }
 }

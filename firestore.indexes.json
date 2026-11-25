@@ -1,19 +1,19 @@
 {
   "indexes": [
     {
-      "collectionGroup": "orders",
+      "collectionGroup": "foodOrders",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "date", "order": "ASCENDING" },
-        { "fieldPath": "personId", "order": "ASCENDING" }
+        { "fieldPath": "person", "order": "ASCENDING" }
       ]
     },
     {
-      "collectionGroup": "leaveRequests",
+      "collectionGroup": "leaveRecords",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "monthKey", "order": "ASCENDING" },
-        { "fieldPath": "personId", "order": "ASCENDING" }
+        { "fieldPath": "month", "order": "ASCENDING" },
+        { "fieldPath": "person", "order": "ASCENDING" }
       ]
     }
   ],

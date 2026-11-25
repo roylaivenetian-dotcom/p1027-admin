@@ -1,47 +1,35 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Secure defaults: deny all client writes until Auth is wired.
-    // Bot ingest should use Admin SDK (Cloud Functions) or a locked-down service account.
-    // Read-only for authenticated workplace users once Auth is enabled.
+    // Secure defaults. Bot (whatsapp-food-feed) writes via Admin SDK / service account.
+    // Client web config is read-oriented; enable Auth then allow signed-in reads.
 
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // People directory — read for signed-in users; writes via Admin / console.
-    match /people/{personId} {
+    match /people/{id} {
       allow read: if isSignedIn();
       allow write: if false;
     }
 
-    // Fixed menu — read for signed-in; admin writes later via custom claims.
-    match /menuItems/{itemId} {
+    match /menuItems/{id} {
       allow read: if isSignedIn();
       allow write: if false;
     }
 
-    // Daily food orders (WhatsApp-derived). Clients read; bots write via Functions.
-    match /orders/{orderId} {
+    // Primary bot feed collections
+    match /foodOrders/{id} {
       allow read: if isSignedIn();
       allow write: if false;
     }
 
-    // Leave self-serve records. Until Auth + approval workflow land, deny client writes.
-    // Switch to: allow create if isSignedIn() && request.resource.data.personId == request.auth.uid
-    match /leaveRequests/{leaveId} {
+    match /leaveRecords/{id} {
       allow read: if isSignedIn();
       allow write: if false;
     }
 
-    // Audit trail for bot / ingest pushes
-    match /ingestEvents/{eventId} {
-      allow read: if isSignedIn();
-      allow write: if false;
-    }
-
-    // Generated Friday summary reports
-    match /weeklyReports/{reportId} {
+    match /weeklyReports/{id} {
       allow read: if isSignedIn();
       allow write: if false;
     }

@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { CreateLeavePayload, FoodOrder, LeaveRequest, MenuItem, Person, UpsertOrderPayload } from '../types'
+import type {
+  CreateLeavePayload,
+  FoodOrderDoc,
+  LeaveRecordDoc,
+  MenuItem,
+  Person,
+  UpsertOrderPayload,
+} from '../types'
 import { SEED_MENU } from '../data/menu'
 import { SEED_PEOPLE } from '../data/people'
-import { MOCK_LEAVE, MOCK_ORDERS } from '../data/mockOrders'
+import { MOCK_FOOD_ORDERS, MOCK_LEAVE } from '../data/mockOrders'
 import {
   cancelLeave as localCancelLeave,
   createLeave as localCreateLeave,
@@ -16,7 +23,7 @@ import {
   fetchLeaveForMonth,
   fetchMenu,
   fetchPeople,
-  subscribeOrdersMonth,
+  subscribeFoodOrdersMonth,
   tryGetDb,
 } from '../services/firestoreData'
 import { firebaseConfigured, firebaseConfigSummary } from '../lib/firebase'
@@ -27,13 +34,12 @@ export type DataSource = 'firestore' | 'mock'
 export function useWorkplaceData(year: number, month: number) {
   const [people, setPeople] = useState<Person[]>(SEED_PEOPLE)
   const [menu, setMenu] = useState<MenuItem[]>(SEED_MENU)
-  const [orders, setOrders] = useState<FoodOrder[]>(MOCK_ORDERS)
-  const [leave, setLeave] = useState<LeaveRequest[]>(MOCK_LEAVE)
+  const [orders, setOrders] = useState<FoodOrderDoc[]>(MOCK_FOOD_ORDERS)
+  const [leave, setLeave] = useState<LeaveRecordDoc[]>(MOCK_LEAVE)
   const [source, setSource] = useState<DataSource>('mock')
   const [status, setStatus] = useState('Loading…')
   const [error, setError] = useState<string | null>(null)
 
-  // Keep mock store in sync for fallback writes / admin
   useEffect(() => {
     return subscribe(() => {
       if (source === 'mock') {
@@ -76,7 +82,6 @@ export function useWorkplaceData(year: number, month: number) {
     }
 
     async function load() {
-      // Show mock immediately so the board never sits on "Loading…"
       applyMock(`Mock data · connecting…`)
 
       const db = tryGetDb()
@@ -86,27 +91,36 @@ export function useWorkplaceData(year: number, month: number) {
       }
 
       try {
-        const [p, m] = await withTimeout(Promise.all([fetchPeople(db), fetchMenu(db)]), 4000)
+        // Prefer foodOrders presence; people/menu may be seeded later by the bot
+        const probe = await withTimeout(
+          Promise.all([fetchPeople(db), fetchMenu(db)]),
+          4000,
+        )
         if (cancelled) return
+        const [p, m] = probe
+        if (p.length) setPeople(p)
+        if (m.length) setMenu(m)
 
-        const hasRemote = p.length > 0 || m.length > 0
-        if (!hasRemote) {
-          applyMock(`Firestore empty (${firebaseConfigSummary()}) · mock until bot/seeds write`)
-          return
-        }
-
-        setPeople(p.length ? p : SEED_PEOPLE)
-        setMenu(m.length ? m : SEED_MENU)
-        setSource('firestore')
-        setStatus(`Live Firestore · ${firebaseConfigSummary()}`)
-        setError(null)
-
-        unsubOrders = subscribeOrdersMonth(
+        let gotLiveOrders = false
+        unsubOrders = subscribeFoodOrdersMonth(
           db,
           year,
           month,
           (remoteOrders) => {
-            if (!cancelled) setOrders(remoteOrders)
+            if (cancelled) return
+            if (remoteOrders.length > 0) {
+              gotLiveOrders = true
+              setOrders(remoteOrders)
+              setSource('firestore')
+              setStatus(`Live Firestore · ${firebaseConfigSummary()}`)
+              setError(null)
+            } else if (!gotLiveOrders) {
+              // Empty month — keep mock for UX until bot writes
+              const s = getState()
+              setOrders(s.orders)
+              setSource('mock')
+              setStatus(`Firestore empty month · mock preview (${firebaseConfigSummary()})`)
+            }
           },
           (err) => {
             console.warn(err)
@@ -116,20 +130,24 @@ export function useWorkplaceData(year: number, month: number) {
 
         const mk = monthKey(year, month)
         const coming = comingMonthKey()
-        const leaveRows = await withTimeout(
-          Promise.all([fetchLeaveForMonth(db, mk), fetchLeaveForMonth(db, coming)]),
-          4000,
-        )
-        if (!cancelled) {
-          const merged = [...leaveRows[0], ...leaveRows[1]]
-          const byId = new Map(merged.map((l) => [l.id, l]))
-          setLeave([...byId.values()])
+        try {
+          const leaveRows = await withTimeout(
+            Promise.all([fetchLeaveForMonth(db, mk), fetchLeaveForMonth(db, coming)]),
+            4000,
+          )
+          if (!cancelled) {
+            const merged = [...leaveRows[0], ...leaveRows[1]]
+            if (merged.length) {
+              const byId = new Map(merged.map((l) => [l.id, l]))
+              setLeave([...byId.values()])
+            }
+          }
+        } catch {
+          /* leave optional */
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
-        if (!cancelled) {
-          applyMock(`Mock fallback · ${firebaseConfigSummary()}`, msg)
-        }
+        if (!cancelled) applyMock(`Mock fallback · ${firebaseConfigSummary()}`, msg)
       }
     }
 

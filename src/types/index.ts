@@ -1,9 +1,10 @@
-/** Shared domain types — also the bot ingest contract shapes. */
+/** Domain types aligned with whatsapp-food-feed Bot feed (see docs/food-leave-app.md). */
 
 export type MenuCategory = 'meal' | 'soup' | 'drink' | 'other'
 
 export interface Person {
   id: string
+  /** Canonical display name used in foodOrders.person */
   name: string
   nameEn?: string
   active: boolean
@@ -15,120 +16,108 @@ export interface MenuItem {
   nameZh: string
   nameEn?: string
   category: MenuCategory
-  /** Base price contribution; soup is 0, meal typically 50, drink typically 5 */
   priceHkd: number
   aliases?: string[]
   active: boolean
 }
 
-export type OrderLineStatus = 'priced' | 'unpriced' | 'provisional'
-
-export interface OrderAddon {
-  kind: 'soup' | 'drink' | 'other'
-  nameZh: string
-  priceHkd: number
-  onMenu: boolean
-}
-
 /**
- * One person's lunch order for one calendar day.
- * Document id recommendation: `{personId}_{yyyy-MM-dd}` for idempotent upserts from the bot.
+ * Firestore `foodOrders/{orderId}` — written by whatsapp-food-feed.
  */
-export interface FoodOrder {
+export interface FoodOrderDoc {
   id: string
-  personId: string
-  personName: string
-  /** ISO date yyyy-MM-dd in Asia/Hong_Kong calendar */
+  person: string
   date: string
-  mealNameZh: string
-  mealNameEn?: string
-  mealOnMenu: boolean
-  addons: OrderAddon[]
-  /** Computed priced amount in HKD; 0 when unpriced */
-  amountHkd: number
-  status: OrderLineStatus
-  /** Free-text remark (off-menu notes, substitutions, 未計價 details) */
-  remark?: string
-  /** Raw WhatsApp / bot source snippet */
-  sourceText?: string
-  source?: 'whatsapp' | 'manual' | 'mock'
+  dish: string
+  soup: boolean
+  drink: string | null
+  extras: string[]
+  onMenu: boolean
+  /** 50, 55, or 0 if off-menu */
+  amount: number
+  remark: string | null
+  sourceJid: string | null
+  sourceMessageId: string | null
   updatedAt: string
-  createdAt: string
 }
-
-export type LeaveType = 'annual' | 'sick' | 'unpaid' | 'other'
 
 /**
- * Self-serve leave record for a coming month window.
- * Document id: auto or `{personId}_{monthKey}_{startDate}`.
+ * Firestore `leaveRecords/{recordId}`
  */
-export interface LeaveRequest {
+export interface LeaveRecordDoc {
   id: string
-  personId: string
-  personName: string
-  /** Target month yyyy-MM (the month leave applies to / was submitted for) */
-  monthKey: string
-  startDate: string
-  endDate: string
-  leaveType: LeaveType
-  note?: string
-  /** Simple status until approval workflow is defined */
-  status: 'submitted' | 'cancelled'
-  source?: 'app' | 'whatsapp' | 'mock'
-  createdAt: string
+  person: string
+  /** YYYY-MM */
+  month: string
+  type: string
+  dates: string[]
+  note: string | null
+  sourceJid: string | null
+  sourceMessageId: string | null
   updatedAt: string
 }
 
-export interface IngestEvent {
+export interface WeeklyReportDoc {
   id: string
-  kind: 'order' | 'leave' | 'weekly_report'
-  payloadSummary: string
-  ok: boolean
-  error?: string
-  createdAt: string
-}
-
-export interface WeeklyReport {
-  id: string
-  /** Week start Monday yyyy-MM-dd */
+  weekId: string
   weekStart: string
   weekEnd: string
+  timezone: string
+  personTotals: { person: string; total: number; orderCount: number; pricedCount: number }[]
+  grandTotal: number
+  orders: FoodOrderDoc[]
   generatedAt: string
-  timezone: 'Asia/Hong_Kong'
-  personTotals: { personId: string; personName: string; totalHkd: number; provisional: boolean }[]
-  grandTotalHkd: number
+  updatedAt: string
+  note?: string
 }
 
-/** Bot write payloads (without server-managed ids/timestamps) */
-export interface UpsertOrderPayload {
-  personId: string
+/** UI helpers derived from FoodOrderDoc */
+export type OrderLineStatus = 'priced' | 'unpriced' | 'provisional'
+
+export interface FoodOrderView {
+  id: string
   personName: string
   date: string
-  mealNameZh: string
-  mealNameEn?: string
-  mealOnMenu?: boolean
-  addons?: OrderAddon[]
-  remark?: string
-  sourceText?: string
-  /** If omitted, server prices from menu */
-  forceStatus?: OrderLineStatus
-  forceAmountHkd?: number
+  dish: string
+  soup: boolean
+  drink: string | null
+  extras: string[]
+  onMenu: boolean
+  amount: number
+  remark: string | null
+  status: OrderLineStatus
+}
+
+export type LeaveType = 'annual' | 'sick' | 'unpaid' | 'leave' | 'other'
+
+export interface LeaveView {
+  id: string
+  personName: string
+  month: string
+  type: string
+  dates: string[]
+  note: string | null
+  status: 'submitted' | 'cancelled'
 }
 
 export interface CreateLeavePayload {
-  personId: string
-  personName: string
-  monthKey: string
-  startDate: string
-  endDate: string
-  leaveType: LeaveType
+  person: string
+  month: string
+  type?: string
+  dates: string[]
   note?: string
-  source?: 'app' | 'whatsapp' | 'mock'
 }
 
-export interface WeekBucket {
-  weekStart: Date
-  weekEnd: Date
-  label: string
-  orders: FoodOrder[]
+export interface UpsertOrderPayload {
+  person: string
+  date: string
+  dish: string
+  soup?: boolean
+  drink?: string | null
+  extras?: string[]
+  onMenu?: boolean
+  amount?: number
+  remark?: string | null
+  sourceJid?: string | null
+  sourceMessageId?: string | null
 }

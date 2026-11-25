@@ -1,81 +1,44 @@
 {
-  "$comment": "Shared contract for roy-console Firestore + whatsapp-food-feed bot. Keep in sync with docs/food-leave-app.md Bot feed section.",
+  "$comment": "Aligned with /cursor/stores/self/docs/food-leave-app.md Bot feed + whatsapp-food-feed",
   "projectId": "roy-console",
   "collections": {
-    "people": {
-      "docId": "{personId}",
-      "fields": ["name", "nameEn?", "active", "sortOrder"]
-    },
-    "menuItems": {
-      "docId": "{itemId}",
-      "fields": ["nameZh", "nameEn?", "category", "priceHkd", "aliases?", "active"],
-      "categoryEnum": ["meal", "soup", "drink", "other"],
-      "defaultPricesHkd": { "meal": 50, "soup": 0, "drink": 5 }
-    },
-    "orders": {
-      "docId": "{personId}_{yyyy-MM-dd}",
-      "fields": [
-        "personId",
-        "personName",
-        "date",
-        "mealNameZh",
-        "mealNameEn?",
-        "mealOnMenu",
-        "addons",
-        "amountHkd",
-        "status",
-        "remark?",
-        "sourceText?",
-        "source",
-        "createdAt",
-        "updatedAt"
-      ],
-      "statusEnum": ["priced", "unpriced", "provisional"],
-      "sourceEnum": ["whatsapp", "manual", "mock"],
-      "addon": {
-        "fields": ["kind", "nameZh", "priceHkd", "onMenu"],
-        "kindEnum": ["soup", "drink", "other"]
+    "foodOrders": {
+      "docId": "stable from person+date+sourceMessageId",
+      "fields": {
+        "id": "string",
+        "person": "string (Ken, Yin, Ric, Roy, Tim, …)",
+        "date": "YYYY-MM-DD HKT",
+        "dish": "string",
+        "soup": "boolean",
+        "drink": "string|null",
+        "extras": "string[]",
+        "onMenu": "boolean — false excluded from totals",
+        "amount": "number — 50, 55, or 0 off-menu",
+        "remark": "string|null",
+        "sourceJid": "string|null",
+        "sourceMessageId": "string|null",
+        "updatedAt": "ISO string"
       }
     },
-    "leaveRequests": {
-      "docId": "{personId}_{yyyy-MM}_{startDate}",
-      "fields": [
-        "personId",
-        "personName",
-        "monthKey",
-        "startDate",
-        "endDate",
-        "leaveType",
-        "note?",
-        "status",
-        "source?",
-        "createdAt",
-        "updatedAt"
-      ],
-      "leaveTypeEnum": ["annual", "sick", "unpaid", "other"],
-      "statusEnum": ["submitted", "cancelled"]
-    },
-    "ingestEvents": {
-      "docId": "auto",
-      "fields": ["kind", "payloadSummary", "ok", "error?", "createdAt"],
-      "kindEnum": ["order", "leave", "weekly_report"]
+    "leaveRecords": {
+      "docId": "recordId",
+      "fields": {
+        "person": "string",
+        "month": "YYYY-MM",
+        "type": "string (default leave)",
+        "dates": "string[]",
+        "note": "string|null",
+        "sourceJid": "string|null",
+        "sourceMessageId": "string|null",
+        "updatedAt": "ISO string"
+      }
     },
     "weeklyReports": {
-      "docId": "{weekStart}",
-      "fields": ["weekStart", "weekEnd", "generatedAt", "timezone", "personTotals", "grandTotalHkd"]
+      "docId": "{weekStart}_{weekEnd}",
+      "fields": ["weekId", "weekStart", "weekEnd", "timezone", "personTotals", "grandTotal", "orders", "generatedAt", "updatedAt", "note?"]
     }
   },
-  "httpIngest": {
-    "path": "/api",
-    "function": "api",
-    "region": "asia-east2",
-    "authHeader": "x-ingest-key",
-    "actions": ["upsertOrder", "createLeave"]
-  },
-  "pricingRules": {
-    "mealHkd": 50,
-    "soupHkd": 0,
-    "drinkHkd": 5,
-    "offMenu": "remark only, status unpriced, exclude from totals (未計價)"
-  }
+  "pricing": { "meal": 50, "soup": 0, "drink": 5, "offMenuAmount": 0 },
+  "writers": "whatsapp-food-feed Admin SDK — not the web client",
+  "readers": "web app prefers live foodOrders; mock fallback same shape"
 }

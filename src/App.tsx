@@ -54,23 +54,15 @@ export default function App() {
               orders={data.orders}
             />
             <div className="dev-tools">
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => {
-                  mockBotPushSample()
-                  if (data.source === 'mock') {
-                    /* store subscription refreshes */
-                  }
-                }}
-              >
+              <button type="button" className="btn-ghost" onClick={() => mockBotPushSample()}>
                 Simulate WhatsApp order push
               </button>
               <button type="button" className="btn-ghost" onClick={() => data.resetMockData()}>
                 Reset mock data
               </button>
               <span className="form-hint">
-                HKT today {today.year}-{String(today.month).padStart(2, '0')}-{String(today.day).padStart(2, '0')}
+                HKT today {today.year}-{String(today.month).padStart(2, '0')}-
+                {String(today.day).padStart(2, '0')} · reads foodOrders / leaveRecords
               </span>
             </div>
           </>
@@ -79,7 +71,7 @@ export default function App() {
           <LeavePanel
             people={data.people}
             leave={data.leave}
-            onSubmit={(p) => data.createLeave({ ...p, source: 'app' })}
+            onSubmit={(p) => data.createLeave(p)}
             onCancel={data.cancelLeave}
           />
         )}

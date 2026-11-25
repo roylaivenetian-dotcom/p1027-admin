@@ -10,27 +10,31 @@ import {
   type Firestore,
   type Unsubscribe,
 } from 'firebase/firestore'
-import type { CreateLeavePayload, FoodOrder, LeaveRequest, MenuItem, Person, UpsertOrderPayload } from '../types'
-import { priceOrder } from '../lib/pricing'
+import type { CreateLeavePayload, FoodOrderDoc, LeaveRecordDoc, MenuItem, Person, UpsertOrderPayload } from '../types'
+import { buildOrderDoc } from '../lib/pricing'
 import { getDb, firebaseConfigured } from '../lib/firebase'
 
-/** Collection names — shared contract with whatsapp-food-feed bot. */
+/** Collection names — must match whatsapp-food-feed Bot feed. */
 export const COLLECTIONS = {
   people: 'people',
   menuItems: 'menuItems',
-  orders: 'orders',
-  leaveRequests: 'leaveRequests',
-  ingestEvents: 'ingestEvents',
+  foodOrders: 'foodOrders',
+  leaveRecords: 'leaveRecords',
   weeklyReports: 'weeklyReports',
 } as const
 
-export function orderDocId(personId: string, date: string): string {
-  return `${personId}_${date}`
-}
-
 export async function fetchPeople(db: Firestore): Promise<Person[]> {
   const snap = await getDocs(collection(db, COLLECTIONS.people))
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Person, 'id'>) }))
+  return snap.docs.map((d) => {
+    const data = d.data() as Partial<Person> & { name?: string }
+    return {
+      id: d.id,
+      name: data.name ?? d.id,
+      nameEn: data.nameEn,
+      active: data.active ?? true,
+      sortOrder: data.sortOrder ?? 0,
+    }
+  })
 }
 
 export async function fetchMenu(db: Firestore): Promise<MenuItem[]> {
@@ -38,97 +42,68 @@ export async function fetchMenu(db: Firestore): Promise<MenuItem[]> {
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<MenuItem, 'id'>) }))
 }
 
-export async function fetchOrdersForMonth(db: Firestore, year: number, month: number): Promise<FoodOrder[]> {
-  const start = `${year}-${String(month).padStart(2, '0')}-01`
-  const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
-  const end = `${year}-${String(month).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`
-  const q = query(
-    collection(db, COLLECTIONS.orders),
-    where('date', '>=', start),
-    where('date', '<=', end),
-    orderBy('date', 'asc'),
-  )
-  const snap = await getDocs(q)
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<FoodOrder, 'id'>) }))
-}
-
-export async function fetchLeaveForMonth(db: Firestore, monthKey: string): Promise<LeaveRequest[]> {
-  const q = query(collection(db, COLLECTIONS.leaveRequests), where('monthKey', '==', monthKey))
-  const snap = await getDocs(q)
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRequest, 'id'>) }))
-}
-
-export function subscribeOrdersMonth(
+export function subscribeFoodOrdersMonth(
   db: Firestore,
   year: number,
   month: number,
-  onData: (orders: FoodOrder[]) => void,
+  onData: (orders: FoodOrderDoc[]) => void,
   onError?: (err: Error) => void,
 ): Unsubscribe {
   const start = `${year}-${String(month).padStart(2, '0')}-01`
   const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
   const end = `${year}-${String(month).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`
   const q = query(
-    collection(db, COLLECTIONS.orders),
+    collection(db, COLLECTIONS.foodOrders),
     where('date', '>=', start),
     where('date', '<=', end),
     orderBy('date', 'asc'),
   )
   return onSnapshot(
     q,
-    (snap) => onData(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<FoodOrder, 'id'>) }))),
+    (snap) =>
+      onData(
+        snap.docs.map((d) => {
+          const data = d.data() as Omit<FoodOrderDoc, 'id'>
+          return { id: d.id, ...data }
+        }),
+      ),
     (err) => onError?.(err),
   )
 }
 
-/** Client-side upsert used when rules allow; bots should use Admin SDK / ingest API. */
-export async function upsertOrderDoc(
+export async function fetchLeaveForMonth(db: Firestore, month: string): Promise<LeaveRecordDoc[]> {
+  const q = query(collection(db, COLLECTIONS.leaveRecords), where('month', '==', month))
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRecordDoc, 'id'>) }))
+}
+
+export async function upsertFoodOrderDoc(
   db: Firestore,
   payload: UpsertOrderPayload,
   menu: MenuItem[],
-): Promise<FoodOrder> {
-  const priced = priceOrder(payload, menu)
-  const id = orderDocId(payload.personId, payload.date)
-  const now = new Date().toISOString()
-  const ref = doc(db, COLLECTIONS.orders, id)
-  const order: FoodOrder = {
-    id,
-    personId: payload.personId,
-    personName: payload.personName,
-    date: payload.date,
-    mealNameZh: payload.mealNameZh,
-    mealNameEn: payload.mealNameEn,
-    ...priced,
-    sourceText: payload.sourceText,
-    source: payload.sourceText ? 'whatsapp' : 'manual',
-    createdAt: now,
-    updatedAt: now,
-  }
-  const { id: _id, ...data } = order
-  await setDoc(ref, data, { merge: true })
-  return order
+): Promise<FoodOrderDoc> {
+  const docData = buildOrderDoc(payload, menu)
+  const { id, ...rest } = docData
+  await setDoc(doc(db, COLLECTIONS.foodOrders, id), rest, { merge: true })
+  return docData
 }
 
-export async function createLeaveDoc(db: Firestore, payload: CreateLeavePayload): Promise<LeaveRequest> {
-  const now = new Date().toISOString()
-  const id = `${payload.personId}_${payload.monthKey}_${payload.startDate}`
-  const leave: LeaveRequest = {
+export async function createLeaveRecordDoc(db: Firestore, payload: CreateLeavePayload): Promise<LeaveRecordDoc> {
+  const id = `${payload.person}_${payload.month}_${payload.dates[0] ?? 'na'}`
+  const record: LeaveRecordDoc = {
     id,
-    personId: payload.personId,
-    personName: payload.personName,
-    monthKey: payload.monthKey,
-    startDate: payload.startDate,
-    endDate: payload.endDate,
-    leaveType: payload.leaveType,
-    note: payload.note,
-    status: 'submitted',
-    source: payload.source ?? 'app',
-    createdAt: now,
-    updatedAt: now,
+    person: payload.person,
+    month: payload.month,
+    type: payload.type ?? 'leave',
+    dates: payload.dates,
+    note: payload.note ?? null,
+    sourceJid: null,
+    sourceMessageId: null,
+    updatedAt: new Date().toISOString(),
   }
-  const { id: _id, ...data } = leave
-  await setDoc(doc(db, COLLECTIONS.leaveRequests, id), data, { merge: true })
-  return leave
+  const { id: _id, ...data } = record
+  await setDoc(doc(db, COLLECTIONS.leaveRecords, id), data, { merge: true })
+  return record
 }
 
 export function tryGetDb(): Firestore | null {

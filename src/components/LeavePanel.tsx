@@ -1,28 +1,19 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import type { LeaveRequest, LeaveType, Person } from '../types'
+import type { LeaveRecordDoc, Person } from '../types'
 import { comingMonthKey, hktParts, isFirstOfMonthHkt, monthKey } from '../lib/dates'
 
 interface Props {
   people: Person[]
-  leave: LeaveRequest[]
+  leave: LeaveRecordDoc[]
   onSubmit: (payload: {
-    personId: string
-    personName: string
-    monthKey: string
-    startDate: string
-    endDate: string
-    leaveType: LeaveType
+    person: string
+    month: string
+    type: string
+    dates: string[]
     note?: string
   }) => void
   onCancel: (id: string) => void
 }
-
-const TYPES: { value: LeaveType; label: string }[] = [
-  { value: 'annual', label: 'Annual / 年假' },
-  { value: 'sick', label: 'Sick / 病假' },
-  { value: 'unpaid', label: 'Unpaid / 無薪' },
-  { value: 'other', label: 'Other / 其他' },
-]
 
 export function LeavePanel({ people, leave, onSubmit, onCancel }: Props) {
   const firstDay = isFirstOfMonthHkt()
@@ -30,29 +21,36 @@ export function LeavePanel({ people, leave, onSubmit, onCancel }: Props) {
   const todayParts = hktParts()
   const thisMonthKey = monthKey(todayParts.year, todayParts.month)
 
-  const [personId, setPersonId] = useState(people[0]?.id ?? '')
+  const [person, setPerson] = useState(people[0]?.name ?? 'Ken')
   const [startDate, setStartDate] = useState(`${targetMonth}-01`)
   const [endDate, setEndDate] = useState(`${targetMonth}-01`)
-  const [leaveType, setLeaveType] = useState<LeaveType>('annual')
+  const [leaveType, setLeaveType] = useState('leave')
   const [note, setNote] = useState('')
   const [monthFilter, setMonthFilter] = useState(targetMonth)
 
   const visible = useMemo(
-    () => leave.filter((l) => l.monthKey === monthFilter && l.status !== 'cancelled'),
+    () => leave.filter((l) => l.month === monthFilter),
     [leave, monthFilter],
   )
 
+  function datesBetween(start: string, end: string): string[] {
+    const out: string[] = []
+    const cur = new Date(`${start}T00:00:00+08:00`)
+    const last = new Date(`${end}T00:00:00+08:00`)
+    while (cur <= last) {
+      out.push(cur.toISOString().slice(0, 10))
+      cur.setDate(cur.getDate() + 1)
+    }
+    return out.length ? out : [start]
+  }
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    const person = people.find((p) => p.id === personId)
-    if (!person) return
     onSubmit({
-      personId: person.id,
-      personName: person.name,
-      monthKey: targetMonth,
-      startDate,
-      endDate,
-      leaveType,
+      person,
+      month: targetMonth,
+      type: leaveType,
+      dates: datesBetween(startDate, endDate),
       note: note.trim() || undefined,
     })
     setNote('')
@@ -64,14 +62,13 @@ export function LeavePanel({ people, leave, onSubmit, onCancel }: Props) {
         {firstDay ? (
           <>
             <strong>今天是每月 1 號 — Leave window open</strong>
-            <span>Submit leave for {targetMonth} (coming month).</span>
+            <span>Submit leave for {targetMonth} (coming month). Collection: leaveRecords.</span>
           </>
         ) : (
           <>
             <strong>Leave applications</strong>
             <span>
-              Primary collection day is the 1st of each month (Asia/Hong_Kong). You can still record leave for{' '}
-              {targetMonth}; the form is highlighted on the 1st.
+              Primary collection day is the 1st of each month (Asia/Hong_Kong). Form targets {targetMonth}.
             </span>
           </>
         )}
@@ -82,11 +79,11 @@ export function LeavePanel({ people, leave, onSubmit, onCancel }: Props) {
           <h2>Apply for leave · {targetMonth}</h2>
           <label>
             Person
-            <select value={personId} onChange={(e) => setPersonId(e.target.value)} required>
+            <select value={person} onChange={(e) => setPerson(e.target.value)} required>
               {people
                 .filter((p) => p.active)
                 .map((p) => (
-                  <option key={p.id} value={p.id}>
+                  <option key={p.id} value={p.name}>
                     {p.name}
                   </option>
                 ))}
@@ -104,12 +101,12 @@ export function LeavePanel({ people, leave, onSubmit, onCancel }: Props) {
           </div>
           <label>
             Type
-            <select value={leaveType} onChange={(e) => setLeaveType(e.target.value as LeaveType)}>
-              {TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
+            <select value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
+              <option value="leave">Leave / 請假</option>
+              <option value="annual">Annual / 年假</option>
+              <option value="sick">Sick / 病假</option>
+              <option value="unpaid">Unpaid / 無薪</option>
+              <option value="other">Other / 其他</option>
             </select>
           </label>
           <label>
@@ -120,7 +117,8 @@ export function LeavePanel({ people, leave, onSubmit, onCancel }: Props) {
             Submit leave record
           </button>
           <p className="form-hint">
-            Simple self-serve record (no approval workflow yet). Today HKT: {thisMonthKey}-{String(todayParts.day).padStart(2, '0')}.
+            Self-serve record (approval TBD). Writes leaveRecords shape. Today HKT: {thisMonthKey}-
+            {String(todayParts.day).padStart(2, '0')}.
           </p>
         </form>
 
@@ -139,14 +137,14 @@ export function LeavePanel({ people, leave, onSubmit, onCancel }: Props) {
             {visible.map((l) => (
               <li key={l.id} className="leave-item">
                 <div>
-                  <strong>{l.personName}</strong> · {l.leaveType}
+                  <strong>{l.person}</strong> · {l.type}
                   <div className="leave-meta">
-                    {l.startDate} → {l.endDate}
+                    {l.dates.length ? `${l.dates[0]} → ${l.dates[l.dates.length - 1]} (${l.dates.length}d)` : '—'}
                     {l.note ? ` · ${l.note}` : ''}
                   </div>
                 </div>
                 <button type="button" className="btn-ghost" onClick={() => onCancel(l.id)}>
-                  Cancel
+                  Remove
                 </button>
               </li>
             ))}
