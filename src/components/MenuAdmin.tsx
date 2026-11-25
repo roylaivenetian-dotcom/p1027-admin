@@ -92,8 +92,8 @@ export function MenuAdmin({
     setPreview(dataUrl)
     setStatus(
       bytesHint
-        ? `Gemini vision… (${Math.round(bytesHint / 1024)} KB)`
-        : 'Gemini vision…',
+        ? `Reading menu… (${Math.round(bytesHint / 1024)} KB)`
+        : 'Reading menu…',
     )
     try {
       const { dishes, engine } = await ocrMenuImage(dataUrl, (msg) => setStatus(msg))
@@ -106,14 +106,15 @@ export function MenuAdmin({
       setStatus(
         dishes.length
           ? `Review ${dishes.length} dish${dishes.length === 1 ? '' : 'es'} (${engine}) — confirm before save`
-          : 'Gemini returned no dishes — add rows manually, then confirm',
+          : 'Vision returned no dishes — add rows manually, then confirm',
       )
     } catch (err) {
       // Keep preview so user can retry; never dump Tesseract garbage into the list
       setStep('idle')
       setOcrDishes([])
-      setError(err instanceof Error ? err.message : String(err))
-      setStatus('Gemini vision failed — fix network/API or tap Retry. Tesseract fallback is disabled.')
+      const raw = err instanceof Error ? err.message : String(err)
+      setError(raw)
+      setStatus('Vision failed — check Gemini quota / DashScope key, then Retry.')
     } finally {
       setBusy(false)
     }
@@ -335,7 +336,8 @@ export function MenuAdmin({
         <div>
           <h2>Fixed menu · 固定菜單</h2>
           <p className="form-hint">
-            Paste or upload a menu <strong>photo</strong> → Gemini vision reads dishes (with weekday) → review / edit → confirm Save.
+            Paste or upload a menu <strong>photo</strong> → vision reads dishes with weekday (Gemini, or Qwen if configured) →
+            review / edit → confirm Save.
             Mid-week uploads keep older menus for earlier days. Meals HK${MEAL_PRICE} · soup free · drinks +HK$
             {DRINK_PRICE}.
           </p>
@@ -410,7 +412,7 @@ export function MenuAdmin({
                       onClick={() => retryVision()}
                       disabled={busy || (!lastFileRef.current && !preview)}
                     >
-                      Retry Gemini vision
+                      Retry vision
                     </button>
                   </div>
                 )}

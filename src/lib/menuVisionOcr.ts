@@ -3,34 +3,20 @@ import type { OcrDishDraft } from './menuOcrParse'
 import { normalizeMenuWeekday } from './menuWeekday'
 
 export type VisionProgress = (msg: string) => void
+export type VisionEngine = 'gemini' | 'qwen'
 
-const DEFAULT_MODELS = [
+const GEMINI_MODELS = [
   'gemini-3.5-flash',
-  'gemini-3.8-flash',
   'gemini-flash-latest',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
   'gemini-3.5-flash-lite',
 ]
 
-function getApiKeys(): string[] {
-  const keys: string[] = []
-  const dedicated = import.meta.env.VITE_GEMINI_API_KEY as string | undefined
-  if (dedicated && !dedicated.includes('YOUR_') && dedicated.length > 20) keys.push(dedicated)
-  const fb = import.meta.env.VITE_FIREBASE_API_KEY as string | undefined
-  if (fb && !fb.includes('YOUR_') && fb.length > 20 && !keys.includes(fb)) keys.push(fb)
-  return keys
-}
+const QWEN_MODELS = ['qwen3-vl-plus', 'qwen-vl-plus', 'qwen-vl-max']
 
-function getApiKey(): string | null {
-  return getApiKeys()[0] ?? null
-}
-
-function getModels(): string[] {
-  const preferred = import.meta.env.VITE_GEMINI_MODEL as string | undefined
-  if (preferred?.trim()) {
-    return [preferred.trim(), ...DEFAULT_MODELS.filter((m) => m !== preferred.trim())]
-  }
-  return DEFAULT_MODELS
-}
+/** Models that returned region/location unsupported — skip for this page session. */
+const skippedGeminiModels = new Set<string>()
 
 const PROMPT = `你是香港繁體中文菜單逐字抄寫員（不是簡體翻譯器、不是同音猜字）。任務：從每週午膳菜單照片準確抄出每道菜的繁體中文菜名，並標明星期欄。
 
@@ -119,19 +105,114 @@ function parseVisionJson(raw: string): OcrDishDraft[] {
   return out
 }
 
-async function dataUrlToBase64(dataUrl: string): Promise<{ mime: string; data: string }> {
+function env(name: string): string | undefined {
+  const v = (import.meta.env as Record<string, string | undefined>)[name]
+  if (!v || v.includes('YOUR_')) return undefined
+  return v.trim() || undefined
+}
+
+function getGeminiKeys(): string[] {
+  const keys: string[] = []
+  for (const k of [env('VITE_GEMINI_API_KEY'), env('VITE_FIREBASE_API_KEY')]) {
+    if (k && k.length > 20 && !keys.includes(k)) keys.push(k)
+  }
+  return keys
+}
+
+function getGeminiModels(): string[] {
+  const preferred = env('VITE_GEMINI_MODEL')
+  const base = preferred
+    ? [preferred, ...GEMINI_MODELS.filter((m) => m !== preferred)]
+    : [...GEMINI_MODELS]
+  return base.filter((m) => !skippedGeminiModels.has(m))
+}
+
+type DashScopeConfig = {
+  apiKey: string
+  baseUrl: string
+  models: string[]
+}
+
+function getDashScopeConfig(): DashScopeConfig | null {
+  const apiKey =
+    env('VITE_DASHSCOPE_API_KEY') ||
+    env('VITE_DASHSCOPE_KEY') ||
+    env('DASHSCOPE_API_KEY') // only if Vite defines it
+  if (!apiKey || apiKey.length < 16) return null
+
+  const workspace =
+    env('VITE_DASHSCOPE_WORKSPACE_ID') ||
+    env('VITE_DASHSCOPE_WORKSPACE') ||
+    env('DASHSCOPE_WORKSPACE_ID')
+  const explicitBase = env('VITE_DASHSCOPE_BASE_URL') || env('DASHSCOPE_BASE_URL')
+
+  let baseUrl = explicitBase?.replace(/\/$/, '')
+  if (!baseUrl && workspace) {
+    baseUrl = `https://${workspace}.cn-hongkong.maas.aliyuncs.com/compatible-mode/v1`
+  }
+  if (!baseUrl) {
+    // Intl DashScope OpenAI-compatible (no workspace id)
+    baseUrl = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'
+  }
+
+  const preferred = env('VITE_DASHSCOPE_MODEL') || env('VITE_QWEN_VL_MODEL')
+  const models = preferred
+    ? [preferred, ...QWEN_MODELS.filter((m) => m !== preferred)]
+    : [...QWEN_MODELS]
+
+  return { apiKey, baseUrl, models }
+}
+
+export function visionConfigured(): boolean {
+  return getGeminiKeys().length > 0 || Boolean(getDashScopeConfig())
+}
+
+function softGeminiMessage(status: number | undefined, msg: string): string {
+  if (status === 429 || /quota|rate.?limit|RESOURCE_EXHAUSTED|free.?tier/i.test(msg)) {
+    return 'Gemini free-tier quota reached — try Qwen/DashScope or retry later'
+  }
+  if (
+    status === 400 &&
+    /location|not supported|FAILED_PRECONDITION|User location is not supported/i.test(msg)
+  ) {
+    return 'Gemini model unavailable in this region — skipped'
+  }
+  if (status === 404 || /not found|is not found for API version/i.test(msg)) {
+    return 'Gemini model not available — skipped'
+  }
+  if (status === 403 || /API_KEY|permission|blocked|referer/i.test(msg)) {
+    return 'Gemini API key blocked or referrer-restricted'
+  }
+  return msg.length > 160 ? `${msg.slice(0, 160)}…` : msg
+}
+
+function isSkipGeminiModel(status: number | undefined, msg: string): boolean {
+  if (status === 404) return true
+  if (status === 400 && /location|not supported|FAILED_PRECONDITION|User location/i.test(msg)) {
+    return true
+  }
+  if (/is not found for API version|Unsupported model/i.test(msg)) return true
+  return false
+}
+
+function isQuotaExhausted(status: number | undefined, msg: string): boolean {
+  return status === 429 || /quota|rate.?limit|RESOURCE_EXHAUSTED|free.?tier/i.test(msg)
+}
+
+async function dataUrlToBase64(dataUrl: string): Promise<{ mime: string; data: string; dataUrl: string }> {
   const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
-  if (m) return { mime: m[1]!, data: m[2]! }
+  if (m) return { mime: m[1]!, data: m[2]!, dataUrl }
   const res = await fetch(dataUrl)
   const blob = await res.blob()
   const buf = await blob.arrayBuffer()
   let binary = ''
   const bytes = new Uint8Array(buf)
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!)
-  return { mime: blob.type || 'image/jpeg', data: btoa(binary) }
+  const b64 = btoa(binary)
+  const mime = blob.type || 'image/jpeg'
+  return { mime, data: b64, dataUrl: `data:${mime};base64,${b64}` }
 }
 
-/** Prepare a JPEG for Gemini: enough pixels for 繁體 strokes, capped for request size. */
 export async function prepareVisionImage(dataUrl: string, targetW = 1600): Promise<string> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const el = new Image()
@@ -152,37 +233,7 @@ export async function prepareVisionImage(dataUrl: string, targetW = 1600): Promi
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(img, 0, 0, w, h)
-
-  try {
-    const blur = document.createElement('canvas')
-    blur.width = w
-    blur.height = h
-    const bctx = blur.getContext('2d')
-    if (bctx) {
-      bctx.filter = 'blur(0.5px)'
-      bctx.drawImage(canvas, 0, 0)
-      const sharp = ctx.getImageData(0, 0, w, h)
-      const soft = bctx.getImageData(0, 0, w, h)
-      const s = sharp.data
-      const u = soft.data
-      const amount = 1.15
-      for (let i = 0; i < s.length; i += 4) {
-        for (let c = 0; c < 3; c++) {
-          const v = s[i + c]! + amount * (s[i + c]! - u[i + c]!)
-          s[i + c] = Math.max(0, Math.min(255, v))
-        }
-      }
-      ctx.putImageData(sharp, 0, 0)
-    }
-  } catch {
-    /* optional */
-  }
-
   return canvas.toDataURL('image/jpeg', 0.9)
-}
-
-export function visionConfigured(): boolean {
-  return Boolean(getApiKey())
 }
 
 async function callGemini(
@@ -214,13 +265,13 @@ async function callGemini(
   )
   const raw = await res.text()
   if (!res.ok) {
-    let msg = raw.slice(0, 240)
+    let msg = raw.slice(0, 280)
     try {
       msg = JSON.parse(raw).error?.message ?? msg
     } catch {
       /* keep */
     }
-    const err = new Error(`${model} HTTP ${res.status}: ${msg}`)
+    const err = new Error(msg)
     ;(err as Error & { status?: number }).status = res.status
     throw err
   }
@@ -230,61 +281,164 @@ async function callGemini(
   return json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? ''
 }
 
+async function callDashScope(
+  cfg: DashScopeConfig,
+  model: string,
+  imageDataUrl: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${cfg.apiKey}`,
+    },
+    signal,
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: imageDataUrl } },
+            { type: 'text', text: PROMPT },
+          ],
+        },
+      ],
+    }),
+  })
+  const raw = await res.text()
+  if (!res.ok) {
+    let msg = raw.slice(0, 280)
+    try {
+      const parsed = JSON.parse(raw) as { error?: { message?: string } | string; message?: string }
+      msg =
+        (typeof parsed.error === 'string' ? parsed.error : parsed.error?.message) ??
+        parsed.message ??
+        msg
+    } catch {
+      /* keep */
+    }
+    const err = new Error(msg)
+    ;(err as Error & { status?: number }).status = res.status
+    throw err
+  }
+  const json = JSON.parse(raw) as {
+    choices?: { message?: { content?: string | { type?: string; text?: string }[] } }[]
+  }
+  const content = json.choices?.[0]?.message?.content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content.map((p) => (typeof p === 'string' ? p : p.text ?? '')).join('')
+  }
+  return ''
+}
+
 /**
- * Gemini vision for weekly Chinese lunch grids (browser, fast).
- * Retries widths / models / keys. No Tesseract. No WhatsApp Grok job wait.
+ * Menu dish vision: Gemini first (when quota/region OK), then DashScope/Qwen.
+ * Soft-skips unsupported Gemini models and free-tier 429s. No Tesseract.
  */
 export async function visionExtractDishes(
   imageDataUrl: string,
   onProgress?: VisionProgress,
-): Promise<{ text: string; dishes: OcrDishDraft[] }> {
-  const apiKeys = getApiKeys()
-  if (!apiKeys.length) {
-    throw new Error('Missing Gemini API key (VITE_GEMINI_API_KEY or VITE_FIREBASE_API_KEY)')
+): Promise<{ text: string; dishes: OcrDishDraft[]; engine: VisionEngine }> {
+  const geminiKeys = getGeminiKeys()
+  const dash = getDashScopeConfig()
+  if (!geminiKeys.length && !dash) {
+    throw new Error(
+      'No vision provider configured. Set VITE_GEMINI_API_KEY and/or VITE_DASHSCOPE_API_KEY (+ workspace id).',
+    )
   }
 
-  const widths = [1600, 1200, 1000]
-  const models = getModels()
-  const errors: string[] = []
+  const notes: string[] = []
+  const widths = [1400, 1100]
+  let geminiQuotaHit = false
 
   for (const targetW of widths) {
-    onProgress?.(`Preparing image for Gemini (${targetW}px)…`)
+    onProgress?.(`Preparing menu image (${targetW}px)…`)
     let prepared: string
     try {
       prepared = await prepareVisionImage(imageDataUrl, targetW)
     } catch (e) {
-      errors.push(`prepare@${targetW}: ${e instanceof Error ? e.message : String(e)}`)
+      notes.push(`prepare: ${e instanceof Error ? e.message : String(e)}`)
       continue
     }
-    const { mime, data } = await dataUrlToBase64(prepared)
+    const { mime, data, dataUrl } = await dataUrlToBase64(prepared)
     if (data.length > 3_500_000) {
-      errors.push(`payload@${targetW} too large (${Math.round(data.length / 1024)} KB b64)`)
+      notes.push(`image too large @${targetW}`)
       continue
     }
 
-    for (const apiKey of apiKeys) {
-      const keyTag = apiKey === apiKeys[0] ? 'primary-key' : 'firebase-key'
-      for (const model of models) {
-        onProgress?.(`Gemini vision (${model}, ${keyTag})…`)
+    // —— Gemini ——
+    if (geminiKeys.length && !geminiQuotaHit) {
+      const models = getGeminiModels()
+      for (const apiKey of geminiKeys) {
+        for (const model of models) {
+          onProgress?.(`Gemini (${model})…`)
+          const ctrl = new AbortController()
+          const timer = setTimeout(() => ctrl.abort(), 75_000)
+          try {
+            const text = await callGemini(apiKey, model, mime, data, ctrl.signal)
+            const dishes = parseVisionJson(text)
+            if (!dishes.length) {
+              notes.push(`${model}: empty list`)
+              continue
+            }
+            onProgress?.(`Gemini found ${dishes.length} dishes — review before save`)
+            return { text, dishes, engine: 'gemini' }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            const status = (e as Error & { status?: number }).status
+            const soft = softGeminiMessage(status, msg)
+            notes.push(`${model}: ${soft}`)
+            if (isSkipGeminiModel(status, msg)) {
+              skippedGeminiModels.add(model)
+              onProgress?.(`${soft} — trying next…`)
+              continue
+            }
+            if (isQuotaExhausted(status, msg)) {
+              geminiQuotaHit = true
+              onProgress?.(`${soft} — trying Qwen if configured…`)
+              break
+            }
+            if (msg.includes('abort')) {
+              notes.push('Gemini timed out')
+              break
+            }
+            // payload errors → try smaller width
+            if (status === 400 || /payload|inline|too large/i.test(msg)) break
+          } finally {
+            clearTimeout(timer)
+          }
+        }
+        if (geminiQuotaHit) break
+      }
+    }
+
+    // —— DashScope / Qwen (HK workspace or intl) ——
+    if (dash) {
+      for (const model of dash.models) {
+        onProgress?.(`Qwen vision (${model})…`)
         const ctrl = new AbortController()
         const timer = setTimeout(() => ctrl.abort(), 90_000)
         try {
-          const text = await callGemini(apiKey, model, mime, data, ctrl.signal)
+          const text = await callDashScope(dash, model, dataUrl, ctrl.signal)
           const dishes = parseVisionJson(text)
           if (!dishes.length) {
-            errors.push(`${model}@${targetW}/${keyTag}: empty dish list`)
+            notes.push(`qwen/${model}: empty list`)
             continue
           }
-          onProgress?.(`Gemini found ${dishes.length} dishes — review before save`)
-          return { text, dishes }
+          onProgress?.(`Qwen found ${dishes.length} dishes — review before save`)
+          return { text, dishes, engine: 'qwen' }
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e)
           const status = (e as Error & { status?: number }).status
-          errors.push(`${model}@${targetW}/${keyTag}: ${msg}`)
-          if (status === 400 || /payload|inline|too large|invalid argument/i.test(msg)) break
-          if (status === 403 || /referer|API_KEY|permission|blocked/i.test(msg)) break
+          const short = msg.length > 140 ? `${msg.slice(0, 140)}…` : msg
+          notes.push(`qwen/${model}: ${status ? `HTTP ${status} ` : ''}${short}`)
+          if (status === 401 || status === 403) break
           if (msg.includes('abort')) {
-            errors.push('request timed out (90s)')
+            notes.push('Qwen timed out')
             break
           }
         } finally {
@@ -294,5 +448,9 @@ export async function visionExtractDishes(
     }
   }
 
-  throw new Error(errors.slice(-5).join(' · ') || 'Gemini vision failed')
+  const hint = dash
+    ? 'Gemini and Qwen both failed'
+    : 'Gemini failed (add VITE_DASHSCOPE_API_KEY + VITE_DASHSCOPE_WORKSPACE_ID for Qwen HK fallback)'
+  const detail = notes.slice(-4).join(' · ') || 'no details'
+  throw new Error(`${hint}. ${detail}`)
 }

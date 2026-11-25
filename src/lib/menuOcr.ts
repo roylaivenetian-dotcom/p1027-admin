@@ -1,5 +1,5 @@
 import type { OcrDishDraft } from './menuOcrParse'
-import { visionConfigured, visionExtractDishes } from './menuVisionOcr'
+import { visionConfigured, visionExtractDishes, type VisionEngine } from './menuVisionOcr'
 
 export type { OcrDishDraft }
 export { parseOcrDishLines, parseDayCellText, mergeDishDrafts } from './menuOcrParse'
@@ -7,26 +7,25 @@ export { parseOcrDishLines, parseDayCellText, mergeDishDrafts } from './menuOcrP
 export type OcrProgress = (msg: string) => void
 
 /**
- * Extract dishes via browser Gemini vision (fast).
- * Keeps weekday tagging. No WhatsApp Grok job wait. No Tesseract fallback.
- * Status engine label is `gemini` on success.
+ * Browser vision: Gemini first, DashScope/Qwen when configured / Gemini quota fails.
+ * Weekday tagging preserved. No Tesseract fallback.
  */
 export async function ocrMenuImage(
   image: string,
   onProgress?: OcrProgress,
-): Promise<{ text: string; dishes: OcrDishDraft[]; engine: 'gemini' }> {
+): Promise<{ text: string; dishes: OcrDishDraft[]; engine: VisionEngine }> {
   if (!visionConfigured()) {
     throw new Error(
-      'Gemini vision is not configured (missing VITE_GEMINI_API_KEY / VITE_FIREBASE_API_KEY). Fix env and redeploy — Tesseract fallback is disabled.',
+      'Vision not configured — set VITE_GEMINI_API_KEY and/or VITE_DASHSCOPE_API_KEY (+ workspace id), then redeploy.',
     )
   }
 
   try {
-    const result = await visionExtractDishes(image, onProgress)
-    return { ...result, engine: 'gemini' }
+    return await visionExtractDishes(image, onProgress)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    throw new Error(`Gemini vision failed: ${msg}`)
+    // Already softened in menuVisionOcr — don't wrap with raw HTTP dumps
+    throw new Error(msg)
   }
 }
 
