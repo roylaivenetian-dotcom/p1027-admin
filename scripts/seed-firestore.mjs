@@ -24,7 +24,7 @@ const people = [
   { id: 'tom', name: 'Tom', active: true, sortOrder: 8 },
 ]
 
-console.log('Seed plan for project roy-console')
+console.log('Seed plan for project sick-meal')
 console.log('Collections: people, menuItems')
 console.log(JSON.stringify({ peopleCount: people.length }, null, 2))
 console.log('Use Firebase console or Admin SDK from whatsapp-food-feed to write these docs.')

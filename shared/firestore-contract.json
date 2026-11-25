@@ -1,6 +1,6 @@
 {
   "$comment": "Aligned with /cursor/stores/self/docs/food-leave-app.md Bot feed + whatsapp-food-feed",
-  "projectId": "roy-console",
+  "projectId": "sick-meal",
   "collections": {
     "orders": {
       "docId": "stable from person+date+sourceMessageId",

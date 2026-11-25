@@ -1,6 +1,6 @@
 # Food & Leave workplace app
 
-Vite + React + TypeScript UI for lunch summaries and leave, targeting Firebase **`roy-console`**.
+Vite + React + TypeScript UI for **P1027 Admin** lunch summaries and leave, targeting Firebase **`sick-meal`**.
 
 Companion writer: Agent SDK bot **`whatsapp-food-feed`** (`/agent/whatsapp-food-feed`) — Admin SDK writes to Firestore. Shared contract: `/cursor/stores/self/docs/food-leave-app.md`.
 
@@ -37,7 +37,7 @@ Meal **HK$50**, soup **free**, drink **+HK$5**. `onMenu: false` → `amount: 0`,
 
 ```bash
 npm run build
-firebase use roy-console
+firebase use sick-meal
 firebase deploy --only hosting,firestore:rules,functions
 firebase functions:secrets:set INGEST_API_KEY   # optional HTTP bridge
 ```
