@@ -94,7 +94,7 @@ export function useWorkplaceData(year: number, month: number) {
         // Prefer orders presence; people/menu may be seeded later by the bot
         const probe = await withTimeout(
           Promise.all([fetchPeople(db), fetchMenu(db)]),
-          4000,
+          12000,
         )
         if (cancelled) return
         const [p, m] = probe
@@ -103,6 +103,8 @@ export function useWorkplaceData(year: number, month: number) {
 
         let gotLiveOrders = false
         let gotLiveLeave = false
+        let leaveResolved = false
+        let remoteLeave: LeaveRecordDoc[] = []
 
         const markLive = (kind: 'orders' | 'leave') => {
           setSource('firestore')
@@ -111,6 +113,31 @@ export function useWorkplaceData(year: number, month: number) {
           if (kind === 'orders') gotLiveOrders = true
           if (kind === 'leave') gotLiveLeave = true
         }
+
+        const mk = monthKey(year, month)
+        const coming = comingMonthKey()
+
+        // Leave + orders in parallel so Live never pairs with leftover mock leave
+        const leavePromise = withTimeout(
+          Promise.all([fetchLeaveForMonth(db, mk), fetchLeaveForMonth(db, coming)]),
+          12000,
+        )
+          .then((leaveRows) => {
+            if (cancelled) return
+            const byId = new Map([...leaveRows[0], ...leaveRows[1]].map((l) => [l.id, l]))
+            remoteLeave = [...byId.values()]
+            leaveResolved = true
+            if (remoteLeave.length) {
+              setLeave(remoteLeave)
+              markLive('leave')
+            } else if (gotLiveOrders) {
+              setLeave([])
+            }
+          })
+          .catch((err) => {
+            console.warn('leave fetch', err)
+            leaveResolved = true
+          })
 
         unsubOrders = subscribeFoodOrdersMonth(
           db,
@@ -121,8 +148,10 @@ export function useWorkplaceData(year: number, month: number) {
             if (remoteOrders.length > 0) {
               setOrders(remoteOrders)
               markLive('orders')
+              // Drop mock leave as soon as orders prove Firestore is live
+              if (leaveResolved) setLeave(remoteLeave)
+              else setLeave([])
             } else if (!gotLiveOrders) {
-              // Empty month — keep mock orders until bot/feed writes; leave may still go live
               const s = getState()
               setOrders(s.orders)
               if (!gotLiveLeave) {
@@ -139,24 +168,7 @@ export function useWorkplaceData(year: number, month: number) {
           },
         )
 
-        const mk = monthKey(year, month)
-        const coming = comingMonthKey()
-        try {
-          const leaveRows = await withTimeout(
-            Promise.all([fetchLeaveForMonth(db, mk), fetchLeaveForMonth(db, coming)]),
-            4000,
-          )
-          if (!cancelled) {
-            const merged = [...leaveRows[0], ...leaveRows[1]]
-            if (merged.length) {
-              const byId = new Map(merged.map((l) => [l.id, l]))
-              setLeave([...byId.values()])
-              markLive('leave')
-            }
-          }
-        } catch {
-          /* leave optional */
-        }
+        await leavePromise
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         if (!cancelled) applyMock(`Mock fallback · ${firebaseConfigSummary()}`, msg)
