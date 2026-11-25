@@ -1,0 +1,405 @@
+:root {
+  --bg: #e8eef4;
+  --bg-accent: #d5e3f0;
+  --panel: #ffffff;
+  --ink: #1a1a1a;
+  --muted: #5a6570;
+  --line: #1a1a1a;
+  --chip: #c8d9ea;
+  --chip-active: #f0a05a;
+  --chip-year: #7ec8a3;
+  --num-active: #3b82c4;
+  --danger: #b45309;
+  --font: 'Segoe UI', 'PingFang HK', 'Noto Sans TC', 'Microsoft JhengHei', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background:
+    radial-gradient(ellipse 80% 50% at 10% 0%, #c5d8ea 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 90% 10%, #dce8f2 0%, transparent 50%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-accent) 100%);
+  background-attachment: fixed;
+}
+
+.app-shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 3rem;
+}
+
+.top-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.brand-mark {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.brand-sub {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.tabs button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 0.35rem 0.85rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tabs button.active {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  max-width: 100%;
+}
+
+.dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.dot.firestore {
+  background: #16a34a;
+}
+
+.dot.mock {
+  background: #ca8a04;
+}
+
+/* Month nav — match reference */
+.month-nav {
+  margin-bottom: 1rem;
+}
+
+.month-nav-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin-bottom: 0.45rem;
+}
+
+.nav-chip {
+  border: 1px solid #2a2a2a;
+  background: var(--chip);
+  padding: 0.35rem 0.65rem;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.year-chip {
+  background: var(--chip-year);
+}
+
+.month-chip.active {
+  background: var(--chip-active);
+}
+
+.nav-arrow {
+  border: none;
+  background: transparent;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.year-label {
+  font-weight: 700;
+  min-width: 3rem;
+  text-align: center;
+}
+
+.nav-num {
+  border: 1px solid transparent;
+  background: transparent;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.35rem;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.nav-num.active {
+  border-color: var(--num-active);
+  color: var(--num-active);
+  font-weight: 700;
+}
+
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.week-panel {
+  background: var(--panel);
+  border: 2px solid var(--line);
+  padding: 0.85rem 1rem 1.1rem;
+  min-height: 12rem;
+}
+
+.week-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-align: center;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 0.4rem;
+}
+
+.person-block {
+  margin-bottom: 0.85rem;
+}
+
+.person-total {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.order-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 0.15rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.order-lines .unpriced {
+  color: var(--danger);
+}
+
+.empty-week {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.board-footnote {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Leave */
+.leave-panel {
+  background: var(--panel);
+  border: 2px solid var(--line);
+  padding: 1rem 1.25rem 1.5rem;
+}
+
+.leave-panel.leave-open {
+  border-color: #c2410c;
+  box-shadow: 0 0 0 3px rgba(240, 160, 90, 0.35);
+}
+
+.leave-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.9rem;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+}
+
+.leave-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) 1fr;
+  gap: 1.5rem;
+}
+
+.leave-form,
+.leave-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.leave-form label,
+.leave-dates label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.leave-form input,
+.leave-form select,
+.leave-form textarea,
+.menu-add input,
+.menu-add select,
+.leave-list-head input {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #94a3b8;
+}
+
+.leave-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.btn-primary {
+  border: 1px solid var(--line);
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+
+.btn-ghost {
+  border: 1px solid #94a3b8;
+  background: #fff;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+}
+
+.form-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.leave-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.leave-list-head h2,
+.leave-form h2,
+.menu-admin h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.leave-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.leave-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.leave-meta {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+/* Menu admin */
+.menu-admin {
+  background: var(--panel);
+  border: 2px solid var(--line);
+  padding: 1rem 1.25rem 1.5rem;
+}
+
+.menu-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.menu-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.menu-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.9rem;
+}
+
+.menu-list li.inactive {
+  opacity: 0.45;
+}
+
+.menu-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.dev-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 720px) {
+  .leave-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .tabs {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .status-pill {
+    width: 100%;
+  }
+}

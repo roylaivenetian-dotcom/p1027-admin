@@ -1,0 +1,162 @@
+import { useCallback, useEffect, useState } from 'react'
+import type { CreateLeavePayload, FoodOrder, LeaveRequest, MenuItem, Person, UpsertOrderPayload } from '../types'
+import { SEED_MENU } from '../data/menu'
+import { SEED_PEOPLE } from '../data/people'
+import { MOCK_LEAVE, MOCK_ORDERS } from '../data/mockOrders'
+import {
+  cancelLeave as localCancelLeave,
+  createLeave as localCreateLeave,
+  saveMenu as localSaveMenu,
+  upsertOrder as localUpsertOrder,
+  getState,
+  subscribe,
+  resetMockData,
+} from '../services/store'
+import {
+  fetchLeaveForMonth,
+  fetchMenu,
+  fetchPeople,
+  subscribeOrdersMonth,
+  tryGetDb,
+} from '../services/firestoreData'
+import { firebaseConfigured, firebaseConfigSummary } from '../lib/firebase'
+import { comingMonthKey, monthKey } from '../lib/dates'
+
+export type DataSource = 'firestore' | 'mock'
+
+export function useWorkplaceData(year: number, month: number) {
+  const [people, setPeople] = useState<Person[]>(SEED_PEOPLE)
+  const [menu, setMenu] = useState<MenuItem[]>(SEED_MENU)
+  const [orders, setOrders] = useState<FoodOrder[]>(MOCK_ORDERS)
+  const [leave, setLeave] = useState<LeaveRequest[]>(MOCK_LEAVE)
+  const [source, setSource] = useState<DataSource>('mock')
+  const [status, setStatus] = useState('Loading…')
+  const [error, setError] = useState<string | null>(null)
+
+  // Keep mock store in sync for fallback writes / admin
+  useEffect(() => {
+    return subscribe(() => {
+      if (source === 'mock') {
+        const s = getState()
+        setPeople(s.people)
+        setMenu(s.menu)
+        setOrders(s.orders)
+        setLeave(s.leave)
+      }
+    })
+  }, [source])
+
+  useEffect(() => {
+    let cancelled = false
+    let unsubOrders: (() => void) | undefined
+
+    function applyMock(label: string, errMsg?: string) {
+      const s = getState()
+      setPeople(s.people)
+      setMenu(s.menu)
+      setOrders(s.orders)
+      setLeave(s.leave)
+      setSource('mock')
+      setStatus(label)
+      setError(errMsg ?? null)
+    }
+
+    async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        return await Promise.race([
+          promise,
+          new Promise<T>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`Firestore timeout after ${ms}ms`)), ms)
+          }),
+        ])
+      } finally {
+        if (timer) clearTimeout(timer)
+      }
+    }
+
+    async function load() {
+      // Show mock immediately so the board never sits on "Loading…"
+      applyMock(`Mock data · connecting…`)
+
+      const db = tryGetDb()
+      if (!db || !firebaseConfigured) {
+        if (!cancelled) applyMock(`Mock data · ${firebaseConfigSummary()}`)
+        return
+      }
+
+      try {
+        const [p, m] = await withTimeout(Promise.all([fetchPeople(db), fetchMenu(db)]), 4000)
+        if (cancelled) return
+
+        const hasRemote = p.length > 0 || m.length > 0
+        if (!hasRemote) {
+          applyMock(`Firestore empty (${firebaseConfigSummary()}) · mock until bot/seeds write`)
+          return
+        }
+
+        setPeople(p.length ? p : SEED_PEOPLE)
+        setMenu(m.length ? m : SEED_MENU)
+        setSource('firestore')
+        setStatus(`Live Firestore · ${firebaseConfigSummary()}`)
+        setError(null)
+
+        unsubOrders = subscribeOrdersMonth(
+          db,
+          year,
+          month,
+          (remoteOrders) => {
+            if (!cancelled) setOrders(remoteOrders)
+          },
+          (err) => {
+            console.warn(err)
+            applyMock(`Firestore listen failed · mock fallback`, err.message)
+          },
+        )
+
+        const mk = monthKey(year, month)
+        const coming = comingMonthKey()
+        const leaveRows = await withTimeout(
+          Promise.all([fetchLeaveForMonth(db, mk), fetchLeaveForMonth(db, coming)]),
+          4000,
+        )
+        if (!cancelled) {
+          const merged = [...leaveRows[0], ...leaveRows[1]]
+          const byId = new Map(merged.map((l) => [l.id, l]))
+          setLeave([...byId.values()])
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        if (!cancelled) {
+          applyMock(`Mock fallback · ${firebaseConfigSummary()}`, msg)
+        }
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+      unsubOrders?.()
+    }
+  }, [year, month])
+
+  const upsertOrder = useCallback((payload: UpsertOrderPayload) => localUpsertOrder(payload), [])
+  const createLeave = useCallback((payload: CreateLeavePayload) => localCreateLeave(payload), [])
+  const cancelLeave = useCallback((id: string) => localCancelLeave(id), [])
+  const saveMenu = useCallback((next: MenuItem[]) => localSaveMenu(next), [])
+
+  return {
+    people,
+    menu,
+    orders,
+    leave,
+    source,
+    status,
+    error,
+    upsertOrder,
+    createLeave,
+    cancelLeave,
+    saveMenu,
+    resetMockData,
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "$comment": "Shared contract for roy-console Firestore + whatsapp-food-feed bot. Keep in sync with docs/food-leave-app.md Bot feed section.",
+  "projectId": "roy-console",
+  "collections": {
+    "people": {
+      "docId": "{personId}",
+      "fields": ["name", "nameEn?", "active", "sortOrder"]
+    },
+    "menuItems": {
+      "docId": "{itemId}",
+      "fields": ["nameZh", "nameEn?", "category", "priceHkd", "aliases?", "active"],
+      "categoryEnum": ["meal", "soup", "drink", "other"],
+      "defaultPricesHkd": { "meal": 50, "soup": 0, "drink": 5 }
+    },
+    "orders": {
+      "docId": "{personId}_{yyyy-MM-dd}",
+      "fields": [
+        "personId",
+        "personName",
+        "date",
+        "mealNameZh",
+        "mealNameEn?",
+        "mealOnMenu",
+        "addons",
+        "amountHkd",
+        "status",
+        "remark?",
+        "sourceText?",
+        "source",
+        "createdAt",
+        "updatedAt"
+      ],
+      "statusEnum": ["priced", "unpriced", "provisional"],
+      "sourceEnum": ["whatsapp", "manual", "mock"],
+      "addon": {
+        "fields": ["kind", "nameZh", "priceHkd", "onMenu"],
+        "kindEnum": ["soup", "drink", "other"]
+      }
+    },
+    "leaveRequests": {
+      "docId": "{personId}_{yyyy-MM}_{startDate}",
+      "fields": [
+        "personId",
+        "personName",
+        "monthKey",
+        "startDate",
+        "endDate",
+        "leaveType",
+        "note?",
+        "status",
+        "source?",
+        "createdAt",
+        "updatedAt"
+      ],
+      "leaveTypeEnum": ["annual", "sick", "unpaid", "other"],
+      "statusEnum": ["submitted", "cancelled"]
+    },
+    "ingestEvents": {
+      "docId": "auto",
+      "fields": ["kind", "payloadSummary", "ok", "error?", "createdAt"],
+      "kindEnum": ["order", "leave", "weekly_report"]
+    },
+    "weeklyReports": {
+      "docId": "{weekStart}",
+      "fields": ["weekStart", "weekEnd", "generatedAt", "timezone", "personTotals", "grandTotalHkd"]
+    }
+  },
+  "httpIngest": {
+    "path": "/api",
+    "function": "api",
+    "region": "asia-east2",
+    "authHeader": "x-ingest-key",
+    "actions": ["upsertOrder", "createLeave"]
+  },
+  "pricingRules": {
+    "mealHkd": 50,
+    "soupHkd": 0,
+    "drinkHkd": 5,
+    "offMenu": "remark only, status unpriced, exclude from totals (未計價)"
+  }
+}
