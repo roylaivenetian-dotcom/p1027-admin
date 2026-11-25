@@ -1,7 +1,7 @@
 {
   "indexes": [
     {
-      "collectionGroup": "foodOrders",
+      "collectionGroup": "orders",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "date", "order": "ASCENDING" },
@@ -9,7 +9,7 @@
       ]
     },
     {
-      "collectionGroup": "leaveRecords",
+      "collectionGroup": "leaveRequests",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "month", "order": "ASCENDING" },

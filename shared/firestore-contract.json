@@ -2,7 +2,7 @@
   "$comment": "Aligned with /cursor/stores/self/docs/food-leave-app.md Bot feed + whatsapp-food-feed",
   "projectId": "roy-console",
   "collections": {
-    "foodOrders": {
+    "orders": {
       "docId": "stable from person+date+sourceMessageId",
       "fields": {
         "id": "string",
@@ -20,7 +20,7 @@
         "updatedAt": "ISO string"
       }
     },
-    "leaveRecords": {
+    "leaveRequests": {
       "docId": "recordId",
       "fields": {
         "person": "string",
@@ -40,5 +40,5 @@
   },
   "pricing": { "meal": 50, "soup": 0, "drink": 5, "offMenuAmount": 0 },
   "writers": "whatsapp-food-feed Admin SDK — not the web client",
-  "readers": "web app prefers live foodOrders; mock fallback same shape"
+  "readers": "web app prefers live orders; mock fallback same shape"
 }

@@ -58,12 +58,12 @@ function price(body: OrderBody): { onMenu: boolean; amount: number; remark: stri
 }
 
 /**
- * Optional HTTP ingest aligned with foodOrders / leaveRecords.
+ * Optional HTTP ingest aligned with orders / leaveRequests.
  * Prefer Admin SDK writes from whatsapp-food-feed; this is a fallback bridge.
  */
 export const api = onRequest({ secrets: [INGEST_API_KEY], cors: true, region: 'asia-east2' }, async (req, res) => {
   if (req.method === 'GET') {
-    res.json({ ok: true, service: 'food-leave-ingest', collections: ['foodOrders', 'leaveRecords'] })
+    res.json({ ok: true, service: 'food-leave-ingest', collections: ['orders', 'leaveRequests'] })
     return
   }
   if (req.method !== 'POST') {
@@ -97,7 +97,7 @@ export const api = onRequest({ secrets: [INGEST_API_KEY], cors: true, region: 'a
         sourceMessageId: o.sourceMessageId ?? null,
         updatedAt: now,
       }
-      await db.collection('foodOrders').doc(id).set(doc, { merge: true })
+      await db.collection('orders').doc(id).set(doc, { merge: true })
       res.json({ ok: true, id, order: { id, ...doc } })
       return
     }
@@ -119,7 +119,7 @@ export const api = onRequest({ secrets: [INGEST_API_KEY], cors: true, region: 'a
         sourceMessageId: l.sourceMessageId ?? null,
         updatedAt: now,
       }
-      await db.collection('leaveRecords').doc(id).set(doc, { merge: true })
+      await db.collection('leaveRequests').doc(id).set(doc, { merge: true })
       res.json({ ok: true, id, leave: { id, ...doc } })
       return
     }
@@ -162,7 +162,7 @@ export const fridayFoodReport = onSchedule(
     const weekId = `${weekStart}_${weekEnd}`
 
     const snap = await db
-      .collection('foodOrders')
+      .collection('orders')
       .where('date', '>=', weekStart)
       .where('date', '<=', weekEnd)
       .get()

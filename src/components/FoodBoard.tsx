@@ -67,7 +67,7 @@ export function FoodBoard({ year, month, onMonthChange, people, orders }: Props)
       <p className="board-footnote">
         Pricing: meal HK$50 · soup free · drink +HK$5 · off-menu → 未計價 (excluded from totals). Dates{' '}
         {formatDisplayDate(`${year}-${String(month).padStart(2, '0')}-01`)} (DD/MM). Schema:{' '}
-        <code>foodOrders</code>.
+        <code>orders</code>.
       </p>
     </section>
   )

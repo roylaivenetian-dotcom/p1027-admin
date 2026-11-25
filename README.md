@@ -13,14 +13,14 @@ npm install
 npm run dev                  # http://127.0.0.1:5173
 ```
 
-Prefers live `foodOrders` / `leaveRecords`; falls back to local mock with the **same document shape**.
+Prefers live `orders` / `leaveRequests`; falls back to local mock with the **same document shape**.
 
 ## Collections (read)
 
 | Collection | Role |
 |------------|------|
-| `foodOrders` | Daily lunch lines from WhatsApp |
-| `leaveRecords` | Leave applications |
+| `orders` | Daily lunch lines from WhatsApp |
+| `leaveRequests` | Leave applications |
 | `weeklyReports` | Friday rollups |
 | `people` / `menuItems` | Optional directory + pricing menu |
 

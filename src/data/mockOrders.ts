@@ -15,7 +15,7 @@ function order(
   }
 }
 
-/** Mock WhatsApp-shaped docs matching foodOrders collection. */
+/** Mock WhatsApp-shaped docs matching orders collection. */
 export const MOCK_FOOD_ORDERS: FoodOrderDoc[] = [
   order({ id: 'Ken_2026-11-02', person: 'Ken', date: '2026-11-02', dish: '豉椒雞球飯', soup: true, drink: null, onMenu: true, amount: 50, remark: null }),
   order({ id: 'Ken_2026-11-03', person: 'Ken', date: '2026-11-03', dish: '四季豆排骨飯', soup: false, drink: '凍檸茶', onMenu: true, amount: 55, remark: null }),

@@ -91,7 +91,7 @@ export function useWorkplaceData(year: number, month: number) {
       }
 
       try {
-        // Prefer foodOrders presence; people/menu may be seeded later by the bot
+        // Prefer orders presence; people/menu may be seeded later by the bot
         const probe = await withTimeout(
           Promise.all([fetchPeople(db), fetchMenu(db)]),
           4000,

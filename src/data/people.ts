@@ -1,6 +1,6 @@
 import type { Person } from '../types'
 
-/** Canonical names used by whatsapp-food-feed foodOrders.person */
+/** Canonical names used by whatsapp-food-feed orders.person */
 export const SEED_PEOPLE: Person[] = [
   { id: 'ken', name: 'Ken', active: true, sortOrder: 1 },
   { id: 'yin', name: 'Yin', active: true, sortOrder: 2 },

@@ -62,7 +62,7 @@ export function LeavePanel({ people, leave, onSubmit, onCancel }: Props) {
         {firstDay ? (
           <>
             <strong>今天是每月 1 號 — Leave window open</strong>
-            <span>Submit leave for {targetMonth} (coming month). Collection: leaveRecords.</span>
+            <span>Submit leave for {targetMonth} (coming month). Collection: leaveRequests.</span>
           </>
         ) : (
           <>
@@ -117,7 +117,7 @@ export function LeavePanel({ people, leave, onSubmit, onCancel }: Props) {
             Submit leave record
           </button>
           <p className="form-hint">
-            Self-serve record (approval TBD). Writes leaveRecords shape. Today HKT: {thisMonthKey}-
+            Self-serve record (approval TBD). Writes leaveRequests shape. Today HKT: {thisMonthKey}-
             {String(todayParts.day).padStart(2, '0')}.
           </p>
         </form>

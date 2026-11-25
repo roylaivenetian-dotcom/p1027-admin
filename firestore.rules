@@ -19,12 +19,12 @@ service cloud.firestore {
     }
 
     // Primary bot feed collections
-    match /foodOrders/{id} {
+    match /orders/{id} {
       allow read: if isSignedIn();
       allow write: if false;
     }
 
-    match /leaveRecords/{id} {
+    match /leaveRequests/{id} {
       allow read: if isSignedIn();
       allow write: if false;
     }

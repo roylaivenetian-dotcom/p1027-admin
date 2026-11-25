@@ -4,7 +4,7 @@ export type MenuCategory = 'meal' | 'soup' | 'drink' | 'other'
 
 export interface Person {
   id: string
-  /** Canonical display name used in foodOrders.person */
+  /** Canonical display name used in orders.person */
   name: string
   nameEn?: string
   active: boolean
@@ -22,7 +22,7 @@ export interface MenuItem {
 }
 
 /**
- * Firestore `foodOrders/{orderId}` — written by whatsapp-food-feed.
+ * Firestore `orders/{orderId}` — written by whatsapp-food-feed.
  */
 export interface FoodOrderDoc {
   id: string
@@ -42,7 +42,7 @@ export interface FoodOrderDoc {
 }
 
 /**
- * Firestore `leaveRecords/{recordId}`
+ * Firestore `leaveRequests/{recordId}`
  */
 export interface LeaveRecordDoc {
   id: string

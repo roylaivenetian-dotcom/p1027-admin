@@ -62,7 +62,7 @@ export default function App() {
               </button>
               <span className="form-hint">
                 HKT today {today.year}-{String(today.month).padStart(2, '0')}-
-                {String(today.day).padStart(2, '0')} · reads foodOrders / leaveRecords
+                {String(today.day).padStart(2, '0')} · reads orders / leaveRequests
               </span>
             </div>
           </>

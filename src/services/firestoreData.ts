@@ -14,12 +14,12 @@ import type { CreateLeavePayload, FoodOrderDoc, LeaveRecordDoc, MenuItem, Person
 import { buildOrderDoc } from '../lib/pricing'
 import { getDb, firebaseConfigured } from '../lib/firebase'
 
-/** Collection names — must match whatsapp-food-feed Bot feed. */
+/** Collection names — must match shared Bot feed contract. */
 export const COLLECTIONS = {
   people: 'people',
   menuItems: 'menuItems',
-  foodOrders: 'foodOrders',
-  leaveRecords: 'leaveRecords',
+  orders: 'orders',
+  leaveRequests: 'leaveRequests',
   weeklyReports: 'weeklyReports',
 } as const
 
@@ -53,7 +53,7 @@ export function subscribeFoodOrdersMonth(
   const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
   const end = `${year}-${String(month).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`
   const q = query(
-    collection(db, COLLECTIONS.foodOrders),
+    collection(db, COLLECTIONS.orders),
     where('date', '>=', start),
     where('date', '<=', end),
     orderBy('date', 'asc'),
@@ -72,7 +72,7 @@ export function subscribeFoodOrdersMonth(
 }
 
 export async function fetchLeaveForMonth(db: Firestore, month: string): Promise<LeaveRecordDoc[]> {
-  const q = query(collection(db, COLLECTIONS.leaveRecords), where('month', '==', month))
+  const q = query(collection(db, COLLECTIONS.leaveRequests), where('month', '==', month))
   const snap = await getDocs(q)
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveRecordDoc, 'id'>) }))
 }
@@ -84,7 +84,7 @@ export async function upsertFoodOrderDoc(
 ): Promise<FoodOrderDoc> {
   const docData = buildOrderDoc(payload, menu)
   const { id, ...rest } = docData
-  await setDoc(doc(db, COLLECTIONS.foodOrders, id), rest, { merge: true })
+  await setDoc(doc(db, COLLECTIONS.orders, id), rest, { merge: true })
   return docData
 }
 
@@ -102,7 +102,7 @@ export async function createLeaveRecordDoc(db: Firestore, payload: CreateLeavePa
     updatedAt: new Date().toISOString(),
   }
   const { id: _id, ...data } = record
-  await setDoc(doc(db, COLLECTIONS.leaveRecords, id), data, { merge: true })
+  await setDoc(doc(db, COLLECTIONS.leaveRequests, id), data, { merge: true })
   return record
 }
 
