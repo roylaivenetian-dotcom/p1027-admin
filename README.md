@@ -35,11 +35,18 @@ Meal **HK$50**, soup **free**, drink **+HK$5**. `onMenu: false` → `amount: 0`,
 
 ## Deploy
 
+Hosting target: Firebase project **sick-meal** (`.firebaserc`). Brand in UI: **P1027 Admin**.
+
 ```bash
 npm run build
-firebase use sick-meal
-firebase deploy --only hosting,firestore:rules,functions
-firebase functions:secrets:set INGEST_API_KEY   # optional HTTP bridge
+npx firebase-tools login          # once per machine (or use FIREBASE_TOKEN from login:ci)
+npx firebase-tools use sick-meal
+npx firebase-tools deploy --only hosting --project sick-meal
+# later: firestore:rules,functions + secrets:set INGEST_API_KEY
 ```
 
+Headless: `npx firebase-tools deploy --only hosting --project sick-meal --non-interactive --token "$FIREBASE_TOKEN"`.
+
 Writes are **not** done with the web API key — use the feed agent service account.
+
+GitHub (suggested): `roylaivenetian-dotcom/p1027-admin` — create the empty repo, then `git remote add origin … && git push -u origin main`.
